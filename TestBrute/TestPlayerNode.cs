@@ -36,6 +36,67 @@ namespace TestBrute
         }
 
         [Fact]
+        public void TestCactusReleaseNeedsHeldJump()
+        {
+            CollisionMap cmap = new(new Dictionary<(int, int), CollisionType>(), null);
+            NeighborCandidate[] candidates = new NeighborCandidate[PlayerNode.MaxNeighborCount];
+
+            // rising with the jump key already up: only a press may produce a release
+            State releasedKey = new() { X = 10, Y = 100, VSpeed = -5, Flags = Bools.CanDJump | Bools.FacingRight | Bools.JumpReleased };
+            int count = PlayerNode.GetNeighborCandidates(releasedKey, cmap, candidates, true);
+            count.Should().BeGreaterThan(0);
+            for (int i = 0; i < count; i++)
+            {
+                bool hasJump = (candidates[i].Input & Input.Jump) == Input.Jump;
+                bool hasRelease = (candidates[i].Input & Input.Release) == Input.Release;
+                (hasRelease && !hasJump).Should().BeFalse("releasing a jump key that is not held is a cactus strat");
+                // a press holds the key down, a press and release in the same frame puts it back up
+                Bools expected = hasJump && !hasRelease ? Bools.None : Bools.JumpReleased;
+                (candidates[i].State.Flags & Bools.JumpReleased).Should().Be(expected);
+            }
+
+            // rising with the jump key held: one release is legal, and a plain jump
+            // leaves the key held so a later frame can release it
+            State heldKey = releasedKey with { Flags = Bools.CanDJump | Bools.FacingRight };
+            count = PlayerNode.GetNeighborCandidates(heldKey, cmap, candidates, true);
+            count.Should().BeGreaterThan(0);
+            bool sawRelease = false, sawJump = false;
+            for (int i = 0; i < count; i++)
+            {
+                bool hasJump = (candidates[i].Input & Input.Jump) == Input.Jump;
+                bool hasRelease = (candidates[i].Input & Input.Release) == Input.Release;
+                if (hasRelease)
+                {
+                    (candidates[i].State.Flags & Bools.JumpReleased).Should().Be(Bools.JumpReleased);
+                }
+                if (hasJump && !hasRelease)
+                {
+                    sawJump = true;
+                    (candidates[i].State.Flags & Bools.JumpReleased).Should().Be(Bools.None);
+                }
+                if (hasRelease && !hasJump)
+                {
+                    sawRelease = true;
+                }
+            }
+            sawRelease.Should().BeTrue();
+            sawJump.Should().BeTrue();
+
+            // both variants stay distinct search states
+            PlayerNode.StateKey(releasedKey).Should().NotBe(PlayerNode.StateKey(heldKey));
+
+            // without tracking the same state may release the key again
+            count = PlayerNode.GetNeighborCandidates(releasedKey, cmap, candidates, false);
+            bool untrackedCactus = false;
+            for (int i = 0; i < count; i++)
+            {
+                untrackedCactus |= (candidates[i].Input & Input.Release) == Input.Release
+                    && (candidates[i].Input & Input.Jump) == Input.Neutral;
+            }
+            untrackedCactus.Should().BeTrue();
+        }
+
+        [Fact]
         public void TestQueueContains()
         {
             var n1 = new PlayerNode(0, 0, 0);

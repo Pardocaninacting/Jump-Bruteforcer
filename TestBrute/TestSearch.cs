@@ -117,6 +117,26 @@ namespace TestBrute
 
 
         [Fact]
+        public void TestCactusCanBeDisabled()
+        {
+            string path = @$"..\..\..\jmaps\co.jmap";
+            string Text = File.ReadAllText(path);
+            Map Map = Parser.Parse(Text);
+
+            // the default search is free to release one jump press repeatedly
+            Search withCactus = new((410, 407.4), (485, 407), Map.CollisionMap);
+            SearchResult withResult = withCactus.RunAStar();
+            withResult.Success.Should().BeTrue();
+            withCactus.Strat.Should().Contain("+");
+
+            // with cactus disabled the same screen still solves, without any extra release
+            Search withoutCactus = new((410, 407.4), (485, 407), Map.CollisionMap) { DisableCactus = true };
+            SearchResult withoutResult = withoutCactus.RunAStar();
+            withoutResult.Success.Should().BeTrue();
+            withoutCactus.Strat.Should().NotContain("+");
+        }
+
+        [Fact]
         private void InstanceOverheadTest()
         {
             const int Size = 1000;
