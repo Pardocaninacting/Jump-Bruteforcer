@@ -38,6 +38,17 @@ namespace Jump_Bruteforcer
         /// back from a solution that passes through it would silently drop that input.
         /// </summary>
         public void ReserveRootSentinel() => Add(0, Input.Neutral);
+
+        /// <summary>Drops every stored link so the instance can be reused for another search pass.</summary>
+        public void Clear()
+        {
+            packedChunks.Clear();
+            wideChunks.Clear();
+            currentPackedChunk = Array.Empty<uint>();
+            currentWideChunk = null;
+            Count = 0;
+        }
+
         internal PathLinkStore(int packedNodeLimit)
         {
             if (packedNodeLimit <= 0 || packedNodeLimit > MaxPackedNodeCount)

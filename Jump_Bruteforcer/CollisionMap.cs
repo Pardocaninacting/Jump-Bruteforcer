@@ -21,6 +21,13 @@ namespace Jump_Bruteforcer
         public CollisionType[,] Collision { get; init; }
         public List<Object> Platforms { get; init; }
 
+        /// <summary>
+        /// True when the map contains at least one vine pixel. FacingRight is only
+        /// observable through the vine distance lookups, so a map without vines can
+        /// leave it out of the search key.
+        /// </summary>
+        public bool HasVines { get; private init; }
+
         private readonly CollisionType[] collisionCells;
         private readonly VineDistance[] vineDistanceCells;
         public readonly HashSet<(int x, int y)> goalPixels;
@@ -47,7 +54,12 @@ namespace Jump_Bruteforcer
                     int vineIndex = pixelIndex * VineVariantCount;
                     for (int variant = 0; variant < VineVariantCount; variant++)
                     {
-                        vineDistanceCells[vineIndex + variant] = vineDistances[x, y, variant];
+                        VineDistance distance = vineDistances[x, y, variant];
+                        vineDistanceCells[vineIndex + variant] = distance;
+                        if (distance != VineDistance.FAR)
+                        {
+                            HasVines = true;
+                        }
                     }
 
                 }
@@ -60,8 +72,7 @@ namespace Jump_Bruteforcer
             return (uint)x < Map.WIDTH && (uint)yRounded < Map.HEIGHT &&
                 (collisionCells[PixelIndex(x, yRounded)] & CollisionType.Warp) != CollisionType.None;
         }
-        public VineDistance GetVineDistance(int x, double y, ObjectType vine, bool facingRight)
-        {
+        public VineDistance GetVineDistance(int x, double y, ObjectType vine, bool facingRight)        {
             int yRounded = (int)Math.Round(y);
             if (!((uint)x < Map.WIDTH & (uint)yRounded < Map.HEIGHT))
             {
@@ -73,8 +84,7 @@ namespace Jump_Bruteforcer
             return vineDistanceCells[PixelIndex(x, yRounded) * VineVariantCount + variant];
         }
 
-        internal VineDistances GetVineDistances(int x, double y)
-        {
+        internal VineDistances GetVineDistances(int x, double y)        {
             int yRounded = (int)Math.Round(y);
             if ((uint)x >= Map.WIDTH || (uint)yRounded >= Map.HEIGHT)
             {
@@ -88,8 +98,15 @@ namespace Jump_Bruteforcer
                 vineDistanceCells[index + (int)VineArrayIdx.VINERIGHTFACINGRIGHT],
                 vineDistanceCells[index + (int)VineArrayIdx.VINERIGHTFACINGLEFT]);
         }
-        public CollisionMap(Dictionary<(int, int), CollisionType>? Collision, List<Object>? Platforms)
+
+        /// <summary>Raw vine distance for one pixel and variant, used to build the search row masks.</summary>
+        internal VineDistance VineDistanceAt(int x, int y, int variant)
         {
+            if ((uint)x >= Map.WIDTH || (uint)y >= Map.HEIGHT) return VineDistance.FAR;
+            return vineDistanceCells[PixelIndex(x, y) * VineVariantCount + variant];
+        }
+
+        public CollisionMap(Dictionary<(int, int), CollisionType>? Collision, List<Object>? Platforms)        {
             this.Collision = new CollisionType[Map.WIDTH, Map.HEIGHT];
             collisionCells = new CollisionType[PixelCount];
             if (Collision != null)

@@ -12,7 +12,8 @@ namespace Jump_Bruteforcer
         private const int MinQuantizedVSpeed = -94;
         private const int MaxQuantizedVSpeed = 94;
         private const int VSpeedCount = MaxQuantizedVSpeed - MinQuantizedVSpeed + 1;
-        private const int FlagCount = 32;
+        // The five physics flags plus the search only jump-released bit.
+        private const int FlagCount = 64;
 
         private readonly ulong[]?[] planes = new ulong[FlagCount * VSpeedCount][];
         private HashSet<ulong>? overflow;
@@ -21,6 +22,19 @@ namespace Jump_Bruteforcer
         public int AllocatedPlaneCount { get; private set; }
         public long BitmapBytes => (long)AllocatedPlaneCount * WordsPerPlane * sizeof(ulong);
         public int OverflowCount => overflow?.Count ?? 0;
+
+        public void Clear()
+        {
+            for (int i = 0; i < planes.Length; i++)
+            {
+                if (planes[i] != null)
+                {
+                    Array.Clear(planes[i]);
+                }
+            }
+            overflow?.Clear();
+            Count = 0;
+        }
 
         public bool Add(ulong key)
         {

@@ -38,8 +38,19 @@ namespace Jump_Bruteforcer
         public State State => new() { X = X, Y = y, VSpeed = vSpeed, Flags = Flags };
 
         public bool IsGoal((int x, int y) goal) => Math.Abs(X - goal.x) <= 1 & RoundedY == goal.y;
-        internal static uint DecodePathCost(ulong priority, uint distance) =>
-            unchecked((uint)(priority >> 32) - distance);
+
+        /// <summary>
+        /// The heuristic contribution that goes into the priority. With a weight above one the
+        /// search turns greedy: it finds a solution much faster at the cost of optimality, which
+        /// is what the layered search uses to obtain an upper bound.
+        /// </summary>
+        internal static uint ScaledDistance(uint distance, int weight) =>
+            distance == uint.MaxValue || weight == 1
+                ? distance
+                : (uint)Math.Min(uint.MaxValue - 1u, (ulong)distance * (ulong)weight);
+
+        internal static uint DecodePathCost(ulong priority, uint distance, int weight) =>
+            unchecked((uint)(priority >> 32) - ScaledDistance(distance, weight));
     }
 
     public class Search : INotifyPropertyChanged
@@ -47,6 +58,7 @@ namespace Jump_Bruteforcer
         private (int x, double y) start;
         private (int x, int y) goal;
         private string _strat = "";
+        private bool disableCactus = false;
         private CollisionMap _collisionMap = new(new Dictionary<(int, int), CollisionType>(), null);
         private PointCollection playerPath = new();
         private double startingVSpeed = 0;
@@ -62,6 +74,32 @@ namespace Jump_Bruteforcer
         public String NodesVisited { get { return nodesVisited; } set { nodesVisited = value; OnPropertyChanged(); } }
         public CollisionMap CollisionMap { get { return _collisionMap; } set { _collisionMap = value; } }
         public double StartingVSpeed { get { return startingVSpeed; } set { startingVSpeed = value; OnPropertyChanged(); } }
+        /// <summary>Weight applied to the heuristic. 1 keeps the search optimal, higher values make it greedy.</summary>
+        public int HeuristicWeight { get; set; } = 1;
+        /// <summary>Run the layered grouped BFS instead of the node based A*.</summary>
+        /// <summary>Collect the per pixel state counts used by the heat map (costs one random write per state).</summary>
+        public static bool CollectHeatMap = true;
+        public bool UseLayeredBfs { get; set; } = false;
+        /// <summary>Use the admissible lower bound instead of the historical flood fill heuristic.</summary>
+        public bool UseAdmissibleHeuristic { get; set; } = false;
+        /// <summary>Add the vertical pattern database to the heuristic.</summary>
+        public bool UseVerticalBound { get; set; } = false;
+        /// <summary>Let the layered search take its frame bound from a node based A* run first.</summary>
+        public bool LayeredUsesAStarBound { get; set; } = true;
+        /// <summary>Starting beam width of the bound pass of the layered search.</summary>
+        public int BeamWidth { get; set; } = 512;
+        /// <summary>Simulations performed by the last layered search.</summary>
+        public long LayeredSimulations { get; private set; }
+        /// <summary>Upper bound found by the beam pass, or uint.MaxValue.</summary>
+        public uint LayeredUpperBound { get; private set; } = uint.MaxValue;
+        public bool LayeredBeamSucceeded { get; private set; }
+        /// <summary>Wall clock time of the last layered search.</summary>
+        public TimeSpan LayeredElapsed { get; private set; }
+        /// <summary>
+        /// When set, a jump key release is only simulated while the key is still held, so the search
+        /// can no longer use the cactus technique (releasing one press of the jump key more than once).
+        /// </summary>
+        public bool DisableCactus { get { return disableCactus; } set { disableCactus = value; OnPropertyChanged(); } }
         public String TimeTaken { get { return timeTaken; } set { timeTaken = value; OnPropertyChanged(); } }
         public String Macro { get { return macro; } set { macro = value; } }
         // Numeric timings exclude map loading and result rendering/export.
@@ -94,11 +132,23 @@ namespace Jump_Bruteforcer
         //inadmissable heuristic because of y position rounding
         public uint Distance(PlayerNode n)
         {
-            return goalDistanceCells[PixelIndex(n.State.X, (int)Math.Round(n.State.Y))];
+            uint packed = pixelInfo[PixelIndex(n.State.X, (int)Math.Round(n.State.Y))];
+            uint distance = packed & HeuristicMask;
+            return distance == HeuristicUnreachable ? uint.MaxValue : distance;
         }
 
+        private uint[]? admissibleTable;
+
         public readonly uint[,] GoalDistance = new uint[Map.WIDTH, Map.HEIGHT];
-        private readonly uint[] goalDistanceCells = new uint[Map.WIDTH * Map.HEIGHT];
+        /// <summary>
+        /// Heuristic value in the low 16 bits and the explored state counter in the high 16, packed
+        /// so that the hot loop touches one cache line per discovered state instead of two.
+        /// </summary>
+        private readonly uint[] pixelInfo = new uint[Map.WIDTH * Map.HEIGHT];
+
+        private const uint HeuristicMask = 0xFFFF;
+        private const uint CounterStep = 1u << 16;
+        private const uint HeuristicUnreachable = 0xFFFF;
 
         public void FloodFill()
         {
@@ -121,7 +171,7 @@ namespace Jump_Bruteforcer
                 for (int Y = 0; Y < Map.HEIGHT; Y++)
                 {
                     GoalDistance[X, Y] = uint.MaxValue;
-                    goalDistanceCells[PixelIndex(X, Y)] = uint.MaxValue;
+                    pixelInfo[PixelIndex(X, Y)] = HeuristicUnreachable;
                 }
             }
 
@@ -130,7 +180,7 @@ namespace Jump_Bruteforcer
             foreach ((int X, int Y) GoalPos in CollisionMap.goalPixels.Union(CurrentGoalPixels))
             {
                 GoalDistance[GoalPos.X, GoalPos.Y] = 0;
-                goalDistanceCells[PixelIndex(GoalPos.X, GoalPos.Y)] = 0;
+                pixelInfo[PixelIndex(GoalPos.X, GoalPos.Y)] = 0;
                 NewPositions.Add(GoalPos);
             }
 
@@ -157,7 +207,7 @@ namespace Jump_Bruteforcer
                             if (GoalDistance[X, Y] == uint.MaxValue && !(CollisionMap.Collision[X, Y].HasFlag(CollisionType.Killer) || CollisionMap.Collision[X, Y].HasFlag(CollisionType.Solid)))
                             {
                                 GoalDistance[X, Y] = Distance;
-                                goalDistanceCells[PixelIndex(X, Y)] = Distance;
+                                pixelInfo[PixelIndex(X, Y)] = Distance;
                                 NewPositions.Add((X, Y));
                             }
                         }
@@ -169,7 +219,73 @@ namespace Jump_Bruteforcer
         }
 
 
-        public SearchResult RunAStar()
+        public SearchResult RunAStar() => UseLayeredBfs ? RunLayered() : RunNodeSearch();
+
+        /// <summary>
+        /// Layered grouped BFS. Optimal, and it shares one vertical simulation between every state
+        /// that has the same exact vertical state, which is where most of the speedup comes from.
+        /// </summary>
+        public SearchResult RunLayered()
+        {
+            var startTime = Stopwatch.GetTimestamp();
+            FloodFillElapsed = TimeSpan.Zero;
+            SearchElapsed = TimeSpan.Zero;
+            VisitedPlaneCount = 0;
+            VisitedBitmapBytes = 0;
+            VisitedOverflowCount = 0;
+            PathLinkCount = 0;
+            PathLinkPackedBytes = 0;
+            PathLinkWideCount = 0;
+            PathLinkWideBytes = 0;
+            PathLinkTotalBytes = 0;
+            LayeredUpperBound = uint.MaxValue;
+            LayeredBeamSucceeded = false;
+            LayeredSimulations = 0;
+
+            PlayerNode root = new PlayerNode(start.x, start.y, startingVSpeed, RootFlags(DisableCactus));
+            // The layered search uses its own admissible table; this fill only feeds the heat map.
+            FloodFill();
+            FloodFillElapsed = Stopwatch.GetElapsedTime(startTime);
+            var layeredStart = Stopwatch.GetTimestamp();
+            var layered = new LayeredSearch(CollisionMap, start, goal, startingVSpeed, DisableCactus, UseVerticalBound);
+            List<Input>? inputs;
+            if (LayeredUsesAStarBound)
+            {
+                SearchResult reference = RunNodeSearch();
+                uint bound = reference.Success ? (uint)ParseFrames(Strat) : uint.MaxValue;
+                inputs = bound == uint.MaxValue ? null : layered.RunWithBound(bound);
+            }
+            else
+            {
+                inputs = layered.Run(Math.Max(1, BeamWidth));
+            }
+            LayeredElapsed = Stopwatch.GetElapsedTime(layeredStart);
+            SearchElapsed = LayeredElapsed;
+            LayeredSimulations = layered.SimulatedUpdates;
+            LayeredUpperBound = layered.UpperBound;
+            LayeredBeamSucceeded = layered.BeamSucceeded;
+            VisitedPlaneCount = 0;
+            NodesVisited = layered.VisitedStates.ToString();
+            TimeTaken = LayeredElapsed.ToString(@"dd\:hh\:mm\:ss\.ff");
+            VisualizeSearch.CountStates(layered.ClosedStates);
+            VisualizeSearch.HeuristicMap(GoalDistance);
+
+            if (inputs == null)
+            {
+                Strat = "SEARCH FAILURE";
+                return new SearchResult(Strat, "", false, layered.VisitedStates);
+            }
+
+            PointCollection points = SearchOutput.GetPathPoints(root, inputs, CollisionMap);
+            PlayerPath = points;
+            Macro = SearchOutput.GetMacro(inputs);
+            Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
+            var end = points.Last();
+            (GoalX, GoalY) = ((int)Math.Round(end.X), (int)Math.Round(end.Y));
+            return new SearchResult(Strat, Macro, true, layered.VisitedStates);
+        }
+
+        private SearchResult RunNodeSearch()
         {
             var startTime = Stopwatch.GetTimestamp();
             FloodFillElapsed = TimeSpan.Zero;
@@ -186,25 +302,34 @@ namespace Jump_Bruteforcer
             FloodFillElapsed = Stopwatch.GetElapsedTime(startTime);
             var searchStartTime = Stopwatch.GetTimestamp();
 
-            PlayerNode root = new PlayerNode(start.x, start.y, startingVSpeed);
+            bool disableCactus = DisableCactus;
+            int heuristicWeight = Math.Max(1, HeuristicWeight);
+            // FacingRight is invisible to the physics on a map without vines, so it is
+            // left out of the deduplication key and roughly halves the state space.
+            bool ignoreFacing = !CollisionMap.HasVines && !PlayerNode.DisableFacingNormalization;
+            PlayerNode root = new PlayerNode(start.x, start.y, startingVSpeed, RootFlags(disableCactus));
 
             root.PathCost = 0;
             int nodesVisited;
-            uint timestamp = uint.MaxValue;
 
-            uint rootDistance = Distance(root);
-            var openSet = new PriorityQueue<SearchNode, ulong>();
-            openSet.Enqueue(new SearchNode(root.State, root.NodeIndex), Priority(rootDistance, timestamp));
+
+            bool admissible = UseAdmissibleHeuristic;
+            if (admissible) admissibleTable = AdmissibleDistance.Build(CollisionMap, goal);
+            ushort[]? verticalTable = UseVerticalBound ? VerticalBound.Build(CollisionMap, goal.y) : null;
+            uint rootDistance = admissible ? AdmissibleDistance.At(admissibleTable!, root.State.X, root.State.Y, goal) : Distance(root);
+            rootDistance = Combine(rootDistance, verticalTable, root.State);
+            var openSet = new BucketQueue();
+            openSet.Push(new SearchNode(root.State, root.NodeIndex), 0, rootDistance, heuristicWeight);
 
             var pathLinks = new PathLinkStore();
             pathLinks.ReserveRootSentinel();
             var visitedStateKeys = new VisitedStateSet();
             var neighborCandidates = new NeighborCandidate[PlayerNode.MaxNeighborCount];
-            int[] closedStates = new int[Map.WIDTH * Map.HEIGHT];
+
             if (rootDistance != uint.MaxValue)
             {
                 bool rootVisited = false;
-                while (openSet.TryDequeue(out SearchNode v, out ulong vPriority))
+                while (openSet.TryPop(out SearchNode v, out uint vCost))
                 {
                     State vState = v.State;
                     if (v.IsGoal(goal) || CollisionMap.onWarp(v.X, v.Y))
@@ -218,7 +343,7 @@ namespace Jump_Bruteforcer
 
                         var optimalGoal = points.Last();
                         (GoalX, GoalY) = ((int)Math.Round(optimalGoal.X), (int)Math.Round(optimalGoal.Y));
-                        VisualizeSearch.CountStates(openSet, closedStates);
+                        VisualizeSearch.CountStates(openSet, ExtractCounts());
                         VisualizeSearch.HeuristicMap(GoalDistance);
                         nodesVisited = visitedStateKeys.Count;
                         NodesVisited = nodesVisited.ToString();
@@ -231,13 +356,13 @@ namespace Jump_Bruteforcer
                     // the root is present before any of its neighbors are checked.
                     if (!rootVisited)
                     {
-                        visitedStateKeys.Add(PlayerNode.StateKey(vState));
+                        visitedStateKeys.Add(PlayerNode.StateKey(vState, ignoreFacing));
                         rootVisited = true;
                     }
 
                     int currentPixelIndex = PixelIndex(v.X, v.RoundedY);
-                    uint currentPathCost = SearchNode.DecodePathCost(vPriority, goalDistanceCells[currentPixelIndex]);
-                    int neighborCount = PlayerNode.GetNeighborCandidates(vState, CollisionMap, neighborCandidates);
+                    uint currentPathCost = vCost;
+                    int neighborCount = PlayerNode.GetNeighborCandidates(vState, CollisionMap, neighborCandidates, disableCactus, ignoreFacing);
                     for (int i = 0; i < neighborCount; i++)
                     {
                         NeighborCandidate candidate = neighborCandidates[i];
@@ -252,11 +377,17 @@ namespace Jump_Bruteforcer
                         uint newCost = currentPathCost + 1;
                         int roundedY = candidate.State.RoundedY;
                         int pixelIndex = PixelIndex(candidate.State.X, roundedY);
-                        closedStates[pixelIndex] += 1;
-                        uint distance = goalDistanceCells[pixelIndex];
+                        if (CollectHeatMap && (pixelInfo[pixelIndex] & 0xFFFF0000u) != 0xFFFF0000u)
+                        {
+                            pixelInfo[pixelIndex] += CounterStep;
+                        }
+                        uint distance = admissible
+                            ? AdmissibleDistance.At(admissibleTable!, candidate.State.X, candidate.State.Y, goal)
+                            : (pixelInfo[pixelIndex] & HeuristicMask) is var rawDistance && rawDistance == HeuristicUnreachable ? uint.MaxValue : rawDistance;
+                        distance = Combine(distance, verticalTable, candidate.State);
                         int nodeIndex = pathLinks.Add(v.NodeIndex, candidate.Input);
                         SearchNode w = new(candidate.State, nodeIndex);
-                        openSet.Enqueue(w, Priority(newCost + distance, --timestamp));
+                        openSet.Push(w, newCost, distance, heuristicWeight);
                     }
 
                 }
@@ -265,7 +396,7 @@ namespace Jump_Bruteforcer
             
             SearchElapsed = Stopwatch.GetElapsedTime(searchStartTime);
             Strat = "SEARCH FAILURE";
-            VisualizeSearch.CountStates(openSet, closedStates);
+            VisualizeSearch.CountStates(openSet, ExtractCounts());
             VisualizeSearch.HeuristicMap(GoalDistance);
             nodesVisited = visitedStateKeys.Count;
             NodesVisited = nodesVisited.ToString();
@@ -275,8 +406,39 @@ namespace Jump_Bruteforcer
             return new SearchResult(Strat, "", false, nodesVisited);
         }
 
+        /// <summary>Unpacks the explored state counter for the heat map.</summary>
+        private int[] ExtractCounts()
+        {
+            int[] counts = new int[Map.WIDTH * Map.HEIGHT];
+            for (int i = 0; i < counts.Length; i++) counts[i] = (int)(pixelInfo[i] >> 16);
+            return counts;
+        }
+
+        private static uint Combine(uint geometric, ushort[]? vertical, State state)
+        {
+            if (vertical == null || geometric == uint.MaxValue) return geometric;
+            uint bound = VerticalBound.At(vertical, state.Y, state.VSpeed, (state.Flags & Bools.CanDJump) != Bools.None);
+            return Math.Max(geometric, bound);
+        }
+
+        internal static int ParseFrames(string strat)
+        {
+            const string prefix = "Frames: ";
+            if (!strat.StartsWith(prefix)) return int.MaxValue;
+            int end = strat.IndexOf('\n');
+            string text = end < 0 ? strat.Substring(prefix.Length) : strat.Substring(prefix.Length, end - prefix.Length);
+            return int.TryParse(text.Trim(), out int frames) ? frames : int.MaxValue;
+        }
+
         private static ulong Priority(uint cost, uint timestamp) => ((ulong)cost << 32) | timestamp;
         private static int PixelIndex(int x, int y) => y * Map.WIDTH + x;
+
+        /// <summary>
+        /// The flags the player starts a screen with. When cactus is forbidden the jump key also starts
+        /// released, so the first frames cannot release a key that was never pressed.
+        /// </summary>
+        private static Bools RootFlags(bool disableCactus) =>
+            disableCactus ? Bools.CanDJump | Bools.FacingRight | Bools.JumpReleased : Bools.CanDJump | Bools.FacingRight;
 
         private void CaptureVisitedStorage(VisitedStateSet states)
         {

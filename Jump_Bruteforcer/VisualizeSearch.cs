@@ -53,6 +53,18 @@ namespace Jump_Bruteforcer
             StateMap(closedSet, openStates);
         }
 
+        public static void CountStates(int[] closedSet) => StateMap(closedSet, new int[Map.WIDTH * Map.HEIGHT]);
+
+        internal static void CountStates(BucketQueue openSet, int[] closedSet)
+        {
+            int[] openStates = new int[Map.WIDTH * Map.HEIGHT];
+            foreach (SearchNode node in openSet.LiveNodes)
+            {
+                openStates[node.RoundedY * Map.WIDTH + node.X] += 1;
+            }
+            StateMap(closedSet, openStates);
+        }
+
         public static void CountStates(PriorityQueue<SearchNode, ulong> openSet, int[] closedSet)
         {
             int[] openStates = new int[Map.WIDTH * Map.HEIGHT];

@@ -46,6 +46,24 @@ namespace Jump_Bruteforcer
             return (inputs, new PointCollection(points));
         }
 
+        /// <summary>
+        /// Replays an input sequence from the root and returns the drawn path. Used by the layered
+        /// search, which reconstructs its input list from parent links instead of a node index.
+        /// </summary>
+        public static PointCollection GetPathPoints(PlayerNode root, List<Input> inputs, CollisionMap collisionMap)
+        {
+            List<Point> points = new() { new Point(root.State.X, root.State.RoundedY) };
+            PlayerNode cur = root;
+            foreach (Input input in inputs)
+            {
+                PlayerNode? next = cur.NewState(input, collisionMap);
+                if (next is null) break;
+                cur = next;
+                points.Add(new Point(cur.State.X, cur.State.RoundedY));
+            }
+            return new PointCollection(points);
+        }
+
         public static string GetInputString(List<Input> inputs)
         {
             if (inputs.Count == 0)

@@ -113,8 +113,17 @@ namespace Jump_Bruteforcer
                 (context.JumpCollision & AnyJumpCollisions) != CollisionType.None;
         }
 
-        internal static State? Update(State state, Input input, CollisionMap collisionMap, PlayerUpdateContext context)
+        internal static State? Update(State state, Input input, CollisionMap collisionMap, PlayerUpdateContext context) =>
+            Update(state, input, collisionMap, context, out _);
+
+        /// <summary>
+        /// Same as the four argument overload, but also reports whether the collision resolution
+        /// ran this frame. Sharing work between the horizontal variants of one frame is only valid
+        /// when it did not, because the resolution rewrites Y, VSpeed and the flags.
+        /// </summary>
+        internal static State? Update(State state, Input input, CollisionMap collisionMap, PlayerUpdateContext context, out bool collided)
         {
+            collided = false;
             (int x, double y, double vSpeed, double hSpeed, Bools flags) = (state.X, state.Y, state.VSpeed, 0, state.Flags);
             (int xPrevious, double yPrevious) = (state.X, state.Y);
 
@@ -233,7 +242,9 @@ namespace Jump_Bruteforcer
                 hSpeed = 0;
                 Bools facingDirection = Bools.FacingRight & flags;
                 Bools invertedGravity = Bools.InvertedGravity & flags;
-                flags = facingDirection | invertedGravity | Bools.CanDJump;
+                // The step event restarts but the key state is global and survives the flip.
+                Bools jumpReleased = Bools.JumpReleased & flags;
+                flags = facingDirection | invertedGravity | jumpReleased | Bools.CanDJump;
                 kidUpsidedown = true;
                 usePreparedContext = false;
                 goto beginningOfStepEvent;
@@ -246,7 +257,8 @@ namespace Jump_Bruteforcer
                 hSpeed = 0;
                 Bools facingDirection = Bools.FacingRight & flags;
                 Bools invertedGravity = Bools.InvertedGravity & flags;
-                flags = facingDirection | invertedGravity | Bools.CanDJump;
+                Bools jumpReleased = Bools.JumpReleased & flags;
+                flags = facingDirection | invertedGravity | jumpReleased | Bools.CanDJump;
                 kidUpsidedown = false;
             }
 
@@ -257,6 +269,7 @@ namespace Jump_Bruteforcer
             y += vSpeed;
             //collision event
             var collisionTypes = collisionMap.GetCollisionTypes(x, y, kidUpsidedown);
+            collided = collisionTypes != CollisionType.None;
             (var currentX, var currentY) = (x,  y);
             int minInstanceNum = 0;
             CollisionType currentCollision = (CollisionType)CollisionMap.UnsetAllBitsExceptMSB((int)collisionTypes);
