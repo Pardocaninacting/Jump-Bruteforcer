@@ -59,6 +59,10 @@
             </Path.Data>
         </Path>
         <Button Content="Start Search" Click="ButtonStartSearch_Click" Height="28" Canvas.Left="276" Canvas.Top="5" Width="89" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <CheckBox Content="Optimal mode" Canvas.Left="1005" Canvas.Top="86" IsChecked="{Binding UseLayeredBfs}"
+                  ToolTip="Guarantee the shortest input sequence by running the layered sweep after the A* bound. Slower than the default search."/>
+        <CheckBox Content="Disable cactus" Canvas.Left="870" Canvas.Top="86" IsChecked="{Binding DisableCactus}"
+                  ToolTip="Forbid strats that release the jump key more than once per press (cactus). Takes effect on the next search."/>
 
         <ScrollViewer Canvas.Left="872"  Canvas.Top="104" Height="544"  Width="256" Content="{Binding Strat}" HorizontalScrollBarVisibility="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" VerticalScrollBarVisibility="Auto"/>
         <Button x:Name="CopyMacroButton" Content="Copy Macro" Canvas.Left="1060" Canvas.Top="10" Click="CopyMacroButton_Click"/>
