@@ -197,6 +197,7 @@ namespace Jump_Bruteforcer
             openSet.Enqueue(new SearchNode(root.State, root.NodeIndex), Priority(rootDistance, timestamp));
 
             var pathLinks = new PathLinkStore();
+            pathLinks.ReserveRootSentinel();
             var visitedStateKeys = new VisitedStateSet();
             var neighborCandidates = new NeighborCandidate[PlayerNode.MaxNeighborCount];
             int[] closedStates = new int[Map.WIDTH * Map.HEIGHT];

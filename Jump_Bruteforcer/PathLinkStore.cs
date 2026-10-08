@@ -32,6 +32,12 @@ namespace Jump_Bruteforcer
         {
         }
 
+        /// <summary>
+        /// Reserves node index 0, which path reconstruction uses as the index of the root.
+        /// Without this the very first stored link would take index 0 as well, and walking
+        /// back from a solution that passes through it would silently drop that input.
+        /// </summary>
+        public void ReserveRootSentinel() => Add(0, Input.Neutral);
         internal PathLinkStore(int packedNodeLimit)
         {
             if (packedNodeLimit <= 0 || packedNodeLimit > MaxPackedNodeCount)
