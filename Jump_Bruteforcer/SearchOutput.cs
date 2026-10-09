@@ -64,6 +64,39 @@ namespace Jump_Bruteforcer
             return new PointCollection(points);
         }
 
+        /// <summary>
+        /// Human readable name of the inputs of a single frame. The A/D nudge bits are printed as
+        /// the keys they stand for, the other bits keep their enum names.
+        /// </summary>
+        public static string GetInputName(Input input)
+        {
+            if (input == Input.Neutral)
+            {
+                return nameof(Input.Neutral);
+            }
+
+            StringBuilder sb = new();
+            AppendFlag(sb, input, Input.Left, nameof(Input.Left));
+            AppendFlag(sb, input, Input.Right, nameof(Input.Right));
+            AppendFlag(sb, input, Input.Jump, nameof(Input.Jump));
+            AppendFlag(sb, input, Input.Release, nameof(Input.Release));
+            AppendFlag(sb, input, Input.NudgeLeft, "A");
+            AppendFlag(sb, input, Input.NudgeRight, "D");
+            return sb.ToString();
+        }
+
+        private static void AppendFlag(StringBuilder sb, Input input, Input flag, string name)
+        {
+            if ((input & flag) == flag)
+            {
+                if (sb.Length > 0)
+                {
+                    sb.Append(", ");
+                }
+                sb.Append(name);
+            }
+        }
+
         public static string GetInputString(List<Input> inputs)
         {
             if (inputs.Count == 0)
@@ -85,13 +118,13 @@ namespace Jump_Bruteforcer
                 }
                 else
                 {
-                    sb.AppendLine($"{PreviousInput}{(Count > 1 ? $" x{Count}" : "")}");
+                    sb.AppendLine($"{GetInputName(PreviousInput)}{(Count > 1 ? $" x{Count}" : "")}");
                     PreviousInput = inputs[i];
                     Count = 1;
                 }
             }
 
-            sb.AppendLine($"{PreviousInput}{(Count > 1 ? $" x{Count}" : "")}");
+            sb.AppendLine($"{GetInputName(PreviousInput)}{(Count > 1 ? $" x{Count}" : "")}");
 
             return sb.ToString();
         }
@@ -163,6 +196,42 @@ namespace Jump_Bruteforcer
 
             return sb.ToString().Trim();
         }
+        /// <summary>
+        /// Everything that moves the kid horizontally: the arrow keys and the A/D nudge.
+        /// </summary>
+        private const Input HorizontalMask = Input.Left | Input.Right | Input.NudgeLeft | Input.NudgeRight;
+
+        /// <summary>
+        /// One token of the horizontal input string: the arrow keys as L/R/LR, the A/D nudge as
+        /// A/D (they are written after the arrows when a frame uses both), neutral as p.
+        /// </summary>
+        private static string GetHorizontalToken(Input horizontalInput)
+        {
+            if (horizontalInput == Input.Neutral)
+            {
+                return "p";
+            }
+
+            StringBuilder sb = new(4);
+            if ((horizontalInput & Input.Left) == Input.Left)
+            {
+                sb.Append('L');
+            }
+            if ((horizontalInput & Input.Right) == Input.Right)
+            {
+                sb.Append('R');
+            }
+            if ((horizontalInput & Input.NudgeLeft) == Input.NudgeLeft)
+            {
+                sb.Append('A');
+            }
+            if ((horizontalInput & Input.NudgeRight) == Input.NudgeRight)
+            {
+                sb.Append('D');
+            }
+            return sb.ToString();
+        }
+
         public static string GetHorizontalInputString(List<Input> inputs)
         {
             if (inputs.Count == 0)
@@ -174,18 +243,18 @@ namespace Jump_Bruteforcer
             int frame = 0;
 
             /*
-            1l 1p 1r 1lr
+            1l 1p 1r 1lr 1d
             */
 
-            Input lastInput = inputs[0] & (Input.Left | Input.Right);
+            Input lastInput = inputs[0] & HorizontalMask;
 
             foreach (Input input in inputs)
             {
-                Input horizontalInput = input &(Input.Left | Input.Right);
+                Input horizontalInput = input & HorizontalMask;
 
                 if (horizontalInput != lastInput)
                 {
-                    sb.Append($"{frame}{(lastInput == Input.Neutral ? "p" : lastInput == Input.Left ? "L" : lastInput == Input.Right ? "R" : "LR")} ");
+                    sb.Append($"{frame}{GetHorizontalToken(lastInput)} ");
                     frame = 0;
                 }
 
@@ -193,7 +262,7 @@ namespace Jump_Bruteforcer
                 frame++;
             }
 
-            sb.Append($"{frame}{(lastInput == Input.Neutral ? "p" : lastInput == Input.Left ? "L" : lastInput == Input.Right ? "R" : "LR")} ");
+            sb.Append($"{frame}{GetHorizontalToken(lastInput)} ");
 
             return sb.ToString().Trim();
         }
@@ -243,6 +312,22 @@ namespace Jump_Bruteforcer
                 if ((input & Input.Release) == Input.Release)
                 {
                     sb.Append((InputChanged ? "," : "") + "K(PR)");
+
+                    InputChanged = true;
+                }
+                // A/D are edge triggered, so one tap per frame: (PR) is press then release inside
+                // the frame, which raises keyboard_check_pressed and leaves the key neutral again.
+                if ((input & Input.NudgeLeft) == Input.NudgeLeft)
+                {
+                    sb.Append((InputChanged ? "," : "") + "A(PR)");
+
+                    InputChanged = true;
+                }
+                if ((input & Input.NudgeRight) == Input.NudgeRight)
+                {
+                    sb.Append((InputChanged ? "," : "") + "D(PR)");
+
+                    InputChanged = true;
                 }
 
                 Direction = NextDirection;
