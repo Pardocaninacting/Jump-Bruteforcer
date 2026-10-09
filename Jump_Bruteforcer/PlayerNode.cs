@@ -43,7 +43,8 @@ namespace Jump_Bruteforcer
         public static bool ShareHorizontal = true;
         public static bool DisableFacingNormalization = false;
         const int epsilon = 10;
-        public const int MaxNeighborCount = 12;
+        // Four vertical groups times three horizontal choices times three nudge states (none/A/D).
+        public const int MaxNeighborCount = 36;
         public State State { get; set; }
         public int NodeIndex { get; set; }
         public uint PathCost { get; set; }
@@ -80,7 +81,7 @@ namespace Jump_Bruteforcer
         {
             int neighborCount = 0;
             PlayerUpdateContext updateContext = Player.PrepareUpdateContext(currentState, CollisionMap);
-            EmitGroup(CollisionMap, neighbors, Input.Neutral, Input.Left, Input.Right, ref neighborCount);
+            EmitGroups(CollisionMap, neighbors, Input.Neutral, Input.Left, Input.Right, ref neighborCount);
             //corresponds to global.grav = 1
             bool globalGravInverted = (currentState.Flags & Bools.InvertedGravity) == Bools.InvertedGravity;
 
@@ -89,26 +90,53 @@ namespace Jump_Bruteforcer
             bool jumpHeld = !trackJumpReleased || (currentState.Flags & Bools.JumpReleased) == Bools.None;
             if (jumpHeld && Math.Sign(currentState.VSpeed) == -checkOffset)
             {
-                EmitGroup(CollisionMap, neighbors, Input.Release, Input.Left | Input.Release, Input.Right | Input.Release, ref neighborCount);
+                EmitGroups(CollisionMap, neighbors, Input.Release, Input.Left | Input.Release, Input.Right | Input.Release, ref neighborCount);
             }
 
             // When Jump cannot mutate this state, all six Jump variants produce
             // states already emitted by the normal or Release groups above.
             if (Player.JumpCanChangeState(currentState, updateContext))
             {
-                EmitGroup(CollisionMap, neighbors, Input.Jump, Input.Left | Input.Jump, Input.Right | Input.Jump, ref neighborCount);
-                EmitGroup(CollisionMap, neighbors, Input.Jump | Input.Release, Input.Left | Input.Jump | Input.Release, Input.Right | Input.Jump | Input.Release, ref neighborCount);
+                EmitGroups(CollisionMap, neighbors, Input.Jump, Input.Left | Input.Jump, Input.Right | Input.Jump, ref neighborCount);
+                EmitGroups(CollisionMap, neighbors, Input.Jump | Input.Release, Input.Left | Input.Jump | Input.Release, Input.Right | Input.Jump | Input.Release, ref neighborCount);
             }
 
             return neighborCount;
 
             /// <summary>
+            /// Emits one vertical input group, repeated for the A/D nudge when the kid stands on a
+            /// block or platform. The nudge shifts the horizontal speed by one pixel, so it is a
+            /// separate input bit rather than a separate state.
+            /// </summary>
+            void EmitGroups(CollisionMap collisionMap, NeighborCandidate[] candidates, Input middle, Input left, Input right, ref int count)
+            {
+                EmitGroup(collisionMap, candidates, middle, left, right, 0, ref count);
+                if (!Player.AllowNudge || !OnBlock(collisionMap))
+                {
+                    return;
+                }
+
+                EmitGroup(collisionMap, candidates, middle | Input.NudgeLeft, left | Input.NudgeLeft, right | Input.NudgeLeft, -1, ref count);
+                EmitGroup(collisionMap, candidates, middle | Input.NudgeRight, left | Input.NudgeRight, right | Input.NudgeRight, 1, ref count);
+            }
+
+            /// <summary>Mirrors the engine test place_meeting(x, y + grav, oBlock); platforms inherit oBlock.</summary>
+            bool OnBlock(CollisionMap collisionMap)
+            {
+                bool inverted = (currentState.Flags & Bools.InvertedGravity) == Bools.InvertedGravity;
+                bool kidUpsidedown = (currentState.Flags & Bools.ParentInvertedGravity) == Bools.ParentInvertedGravity;
+                CollisionType ground = collisionMap.GetCollisionTypes(currentState.X, currentState.Y + (inverted ? -1 : 1), kidUpsidedown);
+                return (ground & (CollisionType.Solid | CollisionType.Platform)) != CollisionType.None;
+            }
+
+            /// <summary>
             /// The three horizontal choices of one vertical input group only differ by x, the facing
             /// bit and the collision at the destination. When the middle frame neither collided nor
             /// touched a vine, and the side destination pixels are free, the side variants are derived
-            /// from the middle result instead of being simulated again.
+            /// from the middle result instead of being simulated again. nudgeShift is the x offset the
+            /// group's A/D bit adds to the middle result, 0 for the groups without a nudge.
             /// </summary>
-            void EmitGroup(CollisionMap collisionMap, NeighborCandidate[] candidates, Input middle, Input left, Input right, ref int count)
+            void EmitGroup(CollisionMap collisionMap, NeighborCandidate[] candidates, Input middle, Input left, Input right, int nudgeShift, ref int count)
             {
                 State? middleState = Player.Update(currentState, middle, collisionMap, updateContext, out bool middleCollided);
                 if (middleState is not State middleResult || !Player.IsAlive(middleResult))
@@ -124,7 +152,7 @@ namespace Jump_Bruteforcer
                 // facing, so all four variants have to be clear for the result to be x independent.
                 VineDistances vines = updateContext.Vines;
                 bool derivable = ShareHorizontal && !middleCollided
-                    && middleResult.X == currentState.X
+                    && middleResult.X == currentState.X + nudgeShift
                     && vines.LeftFacingRight == VineDistance.FAR
                     && vines.LeftFacingLeft == VineDistance.FAR
                     && vines.RightFacingRight == VineDistance.FAR
