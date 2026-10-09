@@ -181,6 +181,28 @@ namespace TestBrute
             macros.Count.Should().BeGreaterThan(1, "a reroll has to be able to return a different route");
         }
 
+        [Fact]
+        public void TestCollectsSeveralEqualSolutions()
+        {
+            // Collecting reruns the search with a shuffled successor order. Only equally short
+            // routes are kept, duplicates are dropped by the positions they visit, and picking one
+            // shows its own notation.
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\tomo.jmap"));
+            Search search = new((410, 407.4), (476, 343), map.CollisionMap) { CollectEqualSolutions = true };
+            SearchResult result = search.RunAStar();
+
+            result.Success.Should().BeTrue();
+            search.Candidates.Count.Should().BeGreaterThan(1);
+            search.Candidates.Select(c => c.Frames).Distinct().Should().HaveCount(1);
+            search.Candidates.Select(c => c.Fingerprint).Distinct().Count().Should().Be(search.Candidates.Count);
+
+            search.SelectedCandidateIndex.Should().Be(0);
+            search.Strat.Should().Be(search.Candidates[0].Strat);
+            search.SelectedCandidateIndex = 1;
+            search.Strat.Should().Be(search.Candidates[1].Strat);
+            search.Macro.Should().Be(search.Candidates[1].Macro);
+        }
+
         /// <summary>Frame count reported by a search result.</summary>
         private static int FramesOf(SearchResult result) =>
             int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);

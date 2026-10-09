@@ -1,5 +1,7 @@
 using Priority_Queue;
 using System.Collections;
+using System.Collections.ObjectModel;
+using System.Text;
 using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -62,6 +64,8 @@ namespace Jump_Bruteforcer
         private int nudgePenalty = 1;
         private bool preferConcise = true;
         private bool reroll = false;
+        private int candidateCount = 1;
+        private int selectedCandidate = -1;
         private CollisionMap _collisionMap = new(new Dictionary<(int, int), CollisionType>(), null);
         private PointCollection playerPath = new();
         private double startingVSpeed = 0;
@@ -129,6 +133,36 @@ namespace Jump_Bruteforcer
         /// cost claims it first.
         /// </summary>
         public bool Reroll { get { return reroll; } set { reroll = value; OnPropertyChanged(); } }
+        /// <summary>
+        /// How many equally short solutions to collect. One only runs the search the usual way;
+        /// more reruns it with a shuffled successor order and keeps the routes that visit different
+        /// positions, so the user can pick the one that is easiest to play.
+        /// </summary>
+        public int CandidateCount { get { return candidateCount; } set { candidateCount = Math.Clamp(value, 1, 64); OnPropertyChanged(); } }
+        /// <summary>The UI switch: collect several equally short solutions instead of one.</summary>
+        public bool CollectEqualSolutions
+        {
+            get { return candidateCount > 1; }
+            set
+            {
+                CandidateCount = value ? 8 : 1;
+                Reroll = value;
+            }
+        }
+        /// <summary>The collected solutions, best first.</summary>
+        public ObservableCollection<SolutionCandidate> Candidates { get; } = new();
+        /// <summary>Which candidate the result panels show.</summary>
+        public int SelectedCandidateIndex
+        {
+            get { return selectedCandidate; }
+            set
+            {
+                if (value < 0 || value >= Candidates.Count || value == selectedCandidate) return;
+                selectedCandidate = value;
+                Show(Candidates[value]);
+                OnPropertyChanged();
+            }
+        }
         public String TimeTaken { get { return timeTaken; } set { timeTaken = value; OnPropertyChanged(); } }
         public String Macro { get { return macro; } set { macro = value; } }
         // Numeric timings exclude map loading and result rendering/export.
@@ -264,16 +298,97 @@ namespace Jump_Bruteforcer
 
         public SearchResult RunAStar()
         {
-            PlayerNode.RerollSeed = Reroll ? Random.Shared.Next(1, int.MaxValue) : 0;
+            PlayerNode.RerollSeed = (Reroll || CandidateCount > 1) ? Random.Shared.Next(1, int.MaxValue) : 0;
+            SearchResult result;
             try
             {
-                return UseLayeredBfs ? RunLayered() : RunNodeSearch();
+                result = UseLayeredBfs ? RunLayered() : RunNodeSearch();
             }
             finally
             {
                 // The shuffle belongs to one search, not to the process.
                 PlayerNode.RerollSeed = 0;
             }
+            CollectCandidates(result);
+            return result;        }
+
+        /// <summary>
+        /// Runs the search again with a shuffled successor order and keeps the equally short routes
+        /// that visit different positions, best first. Only the first search runs when
+        /// <see cref="CandidateCount"/> is one, so the usual path is untouched.
+        /// </summary>
+        private void CollectCandidates(SearchResult first)
+        {
+            Candidates.Clear();
+            selectedCandidate = -1;
+            if (!first.Success)
+            {
+                return;
+            }
+
+            int frames = lastInputs.Count;
+            var seen = new HashSet<string>();
+            Remember(frames, seen);
+            for (int attempt = 1; attempt < CandidateCount; attempt++)
+            {
+                PlayerNode.RerollSeed = Random.Shared.Next(1, int.MaxValue);
+                try
+                {
+                    if (UseLayeredBfs) RunLayered(); else RunNodeSearch();
+                }
+                finally
+                {
+                    PlayerNode.RerollSeed = 0;
+                }
+                if (lastInputs.Count != frames)
+                {
+                    continue;
+                }
+                Remember(frames, seen);
+            }
+
+            if (Candidates.Count > 0)
+            {
+                SelectedCandidateIndex = 0;
+            }
+        }
+
+        /// <summary>Records the solution the last search left behind unless its route is already there.</summary>
+        private void Remember(int frames, HashSet<string> seen)
+        {
+            string fingerprint = Fingerprint(lastInputs);
+            if (!seen.Add(fingerprint))
+            {
+                return;
+            }
+            Candidates.Add(new SolutionCandidate(Candidates.Count + 1, frames, InputChanges(lastInputs), Macro, Strat, PlayerPath, fingerprint));
+        }
+
+        /// <summary>The positions the last solution visits, used to tell two routes apart.</summary>
+        private string Fingerprint(List<Input> inputs)
+        {
+            StringBuilder sb = new();
+            PlayerNode current = new(start.x, start.y, startingVSpeed);
+            sb.Append(current.State.X).Append(':').Append(current.State.RoundedY).Append(';');
+            foreach (Input input in inputs)
+            {
+                PlayerNode? next = current.NewState(input, CollisionMap);
+                if (next is null)
+                {
+                    break;
+                }
+                current = next;
+                sb.Append(current.State.X).Append(':').Append(current.State.RoundedY).Append(';');
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Shows the panels of one candidate.</summary>
+        private void Show(SolutionCandidate candidate)
+        {
+            Strat = candidate.Strat;
+            Macro = candidate.Macro;
+            PlayerPath = candidate.Points;
         }
 
         /// <summary>
@@ -342,6 +457,7 @@ namespace Jump_Bruteforcer
 
             PointCollection points = SearchOutput.GetPathPoints(root, inputs, CollisionMap);
             PlayerPath = points;
+            lastInputs = inputs;
             Macro = SearchOutput.GetMacro(inputs);
             Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
             var end = points.Last();
