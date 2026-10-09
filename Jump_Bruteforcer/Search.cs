@@ -151,7 +151,7 @@ namespace Jump_Bruteforcer
             return distance == HeuristicUnreachable ? uint.MaxValue : distance;
         }
 
-        private uint[]? admissibleTable;
+        private AdmissibleDistance.Table? admissibleTable;
 
         public readonly uint[,] GoalDistance = new uint[Map.WIDTH, Map.HEIGHT];
         /// <summary>
@@ -331,7 +331,7 @@ namespace Jump_Bruteforcer
             bool admissible = UseAdmissibleHeuristic;
             if (admissible) admissibleTable = AdmissibleDistance.Build(CollisionMap, goal);
             ushort[]? verticalTable = UseVerticalBound ? VerticalBound.Build(CollisionMap, goal.y) : null;
-            uint rootDistance = admissible ? AdmissibleDistance.At(admissibleTable!, root.State.X, root.State.Y, goal) : Distance(root);
+            uint rootDistance = admissible ? AdmissibleDistance.At(admissibleTable!.Value, root.State.X, root.State.Y) : Distance(root);
             rootDistance = Combine(rootDistance, verticalTable, root.State);
             var openSet = new BucketQueue();
             openSet.Push(new SearchNode(root.State, root.NodeIndex), 0, rootDistance, heuristicWeight);
@@ -404,7 +404,7 @@ namespace Jump_Bruteforcer
                             pixelInfo[pixelIndex] += CounterStep;
                         }
                         uint distance = admissible
-                            ? AdmissibleDistance.At(admissibleTable!, candidate.State.X, candidate.State.Y, goal)
+                            ? AdmissibleDistance.At(admissibleTable!.Value, candidate.State.X, candidate.State.Y)
                             : (pixelInfo[pixelIndex] & HeuristicMask) is var rawDistance && rawDistance == HeuristicUnreachable ? uint.MaxValue : rawDistance;
                         distance = Combine(distance, verticalTable, candidate.State);
                         int nodeIndex = pathLinks.Add(v.NodeIndex, candidate.Input);

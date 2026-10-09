@@ -42,7 +42,7 @@ namespace Jump_Bruteforcer
         private readonly ulong[][] _rowPlatform = new ulong[Map.HEIGHT][];
         private readonly ulong[][] _rowJump = new ulong[Map.HEIGHT][];
         private readonly ulong[][] _rowVine = new ulong[Map.HEIGHT][];
-        private readonly uint[] _lowerBound;
+        private readonly AdmissibleDistance.Table _lowerBound;
         private readonly ushort[]? _vertical;
         private readonly int[] _flagToIndex = new int[256];
         private readonly Bools[] _flagOfIndex = new Bools[256];
@@ -147,7 +147,7 @@ namespace Jump_Bruteforcer
 
         private static bool BitAt(ulong[] row, int x) => (row[x >> 6] & (1UL << (x & 63))) != 0;
 
-        private uint Heuristic(int x, double y) => AdmissibleDistance.At(_lowerBound, x, y, _goal);
+        private uint Heuristic(int x, double y) => AdmissibleDistance.At(_lowerBound, x, y);
 
         /// <summary>The same bound the node search uses, for the frame pruning.</summary>
         private uint Heuristic(State state)

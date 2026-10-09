@@ -15,13 +15,23 @@ namespace Jump_Bruteforcer
     {
         public const int VerticalReach = 10;
 
-        public static uint[] Build(CollisionMap map, (int x, int y) goal)
+        /// <summary>
+        /// Vertical table over every pixel plus the horizontal table over every column. Both are
+        /// seeded from every pixel the search accepts as a goal, the goal column and the warps, so
+        /// neither of them can overestimate the frames left to whichever goal is reached first.
+        /// </summary>
+        public readonly record struct Table(uint[] Vertical, uint[] Horizontal);
+
+        public static Table Build(CollisionMap map, (int x, int y) goal)
         {
             uint[] table = new uint[Map.WIDTH * Map.HEIGHT];
             Array.Fill(table, uint.MaxValue);
             bool[] seen = new bool[Map.WIDTH * Map.HEIGHT];
             var current = new List<int>();
             var next = new List<int>();
+            // columns the search accepts as a goal: the goal tolerates one pixel either side, and
+            // touching a warp finishes the screen wherever it is
+            bool[] goalColumn = new bool[Map.WIDTH];
 
             void Seed(int x, int y)
             {
@@ -33,10 +43,22 @@ namespace Jump_Bruteforcer
                 current.Add(index);
             }
 
+            void SeedColumn(int x)
+            {
+                if ((uint)x < Map.WIDTH) goalColumn[x] = true;
+            }
+
             Seed(goal.x, goal.y);
             Seed(goal.x - 1, goal.y);
             Seed(goal.x + 1, goal.y);
-            foreach ((int x, int y) in map.goalPixels) Seed(x, y);
+            SeedColumn(goal.x - 1);
+            SeedColumn(goal.x);
+            SeedColumn(goal.x + 1);
+            foreach ((int x, int y) in map.goalPixels)
+            {
+                Seed(x, y);
+                SeedColumn(x);
+            }
 
             uint distance = 1;
             while (current.Count > 0)
@@ -66,22 +88,64 @@ namespace Jump_Bruteforcer
                 distance++;
             }
 
-            return table;
+            return new Table(table, BuildHorizontal(goalColumn));
         }
 
         /// <summary>
-        /// Lower bound for a fractional position: the smaller of the two neighbouring rows, plus the
-        /// horizontal component (at most three pixels per frame, and the goal tolerates one pixel).
+        /// Frames needed to cover the horizontal distance alone, at three pixels per frame, from the
+        /// nearest goal column. Seeding every warp column is what keeps warp routes from being
+        /// pruned by a bound that only knew about the goal position.
         /// </summary>
-        public static uint At(uint[] table, int x, double y, (int x, int y) goal)
+        private static uint[] BuildHorizontal(bool[] goalColumn)
+        {
+            uint[] horizontal = new uint[Map.WIDTH];
+            Array.Fill(horizontal, uint.MaxValue);
+            var queue = new Queue<int>();
+            for (int x = 0; x < Map.WIDTH; x++)
+            {
+                if (goalColumn[x])
+                {
+                    horizontal[x] = 0;
+                    queue.Enqueue(x);
+                }
+            }
+
+            while (queue.Count > 0)
+            {
+                int x = queue.Dequeue();
+                uint next = horizontal[x] + 1;
+                for (int step = 1; step <= PhysicsParams.WALKING_SPEED; step++)
+                {
+                    int left = x - step;
+                    if ((uint)left < Map.WIDTH && horizontal[left] > next)
+                    {
+                        horizontal[left] = next;
+                        queue.Enqueue(left);
+                    }
+                    int right = x + step;
+                    if ((uint)right < Map.WIDTH && horizontal[right] > next)
+                    {
+                        horizontal[right] = next;
+                        queue.Enqueue(right);
+                    }
+                }
+            }
+            return horizontal;
+        }
+
+        /// <summary>
+        /// Lower bound for a fractional position: the smaller of the two neighbouring rows, and the
+        /// horizontal distance to the nearest goal column.
+        /// </summary>
+        public static uint At(Table table, int x, double y)
         {
             if ((uint)x >= Map.WIDTH) return uint.MaxValue;
             int lo = Math.Clamp((int)Math.Floor(y), 0, Map.HEIGHT - 1);
             int hi = Math.Clamp((int)Math.Ceiling(y), 0, Map.HEIGHT - 1);
-            uint vertical = Math.Min(table[lo * Map.WIDTH + x], table[hi * Map.WIDTH + x]);
+            uint vertical = Math.Min(table.Vertical[lo * Map.WIDTH + x], table.Vertical[hi * Map.WIDTH + x]);
             if (vertical == uint.MaxValue) return uint.MaxValue;
-            int dx = Math.Abs(x - goal.x);
-            uint horizontal = (uint)(Math.Max(0, dx - 1) / PhysicsParams.WALKING_SPEED);
+            uint horizontal = table.Horizontal[x];
+            if (horizontal == uint.MaxValue) return uint.MaxValue;
             return Math.Max(vertical, horizontal);
         }
     }
