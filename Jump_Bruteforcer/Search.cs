@@ -425,6 +425,73 @@ namespace Jump_Bruteforcer
                 PlayerNode.RerollSeed = 0;
             }
 
+            // The node based search claims a state for the first parent that reaches it, so it cannot
+            // follow some of the routes the exclusions open up. The exhaustive sweep has no such
+            // limit, and on the screens the collection is meant for one round costs about twenty
+            // milliseconds, so a short time budget buys a lot of alternatives. Both passes run and
+            // their results are merged: the chain above reaches a family that simply grows a pause,
+            // this one reaches everything the sweep can time differently.
+            if (CandidateCount > 1)
+            {
+                var collector = new LayeredSearch(CollisionMap, start, goal, startingVSpeed, DisableCactus, UseVerticalBound);
+                var sweepWork = new LinkedList<List<(int Depth, Input Mask)>>();
+                var sweepTried = new HashSet<string>();
+                sweepWork.AddLast(new List<(int Depth, Input Mask)>());
+                var sweepClock = Stopwatch.StartNew();
+                uint sweepBound = uint.MaxValue;
+                while (sweepWork.Count > 0 && sweepClock.Elapsed < TimeSpan.FromSeconds(3)
+                    && gathered.Count < CandidateCount * 8)
+                {
+                    List<(int Depth, Input Mask)> excluded = sweepWork.Last!.Value;
+                    sweepWork.RemoveLast();
+                    if (!sweepTried.Add(string.Join("|", excluded.Select(e => e.Depth).OrderBy(d => d))))
+                    {
+                        continue;
+                    }
+                    collector.Exclusions = new HashSet<(int Depth, Input Mask)>(excluded);
+                    List<Input>? path = collector.RunWithBound(sweepBound);
+                    if (path == null || path.Count - frames > MaxVariantFrames)
+                    {
+                        continue;
+                    }
+                    if (sweepBound == uint.MaxValue)
+                    {
+                        sweepBound = (uint)(path.Count + MaxVariantFrames);
+                    }
+                    string sweepFingerprint = Fingerprint(path);
+                    if (!seen.Add(sweepFingerprint))
+                    {
+                        continue;
+                    }
+                    gathered.Add(new SolutionCandidate(gathered.Count + 1, path.Count, InputChanges(path),
+                        path.Count - frames, SearchOutput.GetMacro(path), Strategy(path),
+                        SearchOutput.GetPathPoints(new PlayerNode(start.x, start.y, startingVSpeed), path, CollisionMap),
+                        sweepFingerprint, SearchOutput.GetVerticalInputString(path, true)));
+
+                    // Same branching as the pass above: the last jump goes on last so the stack pops it
+                    // first and the family that grows a pause is still walked all the way down.
+                    var sweepJumps = new List<int>();
+                    for (int i = 0; i < path.Count && sweepJumps.Count < 2; i++)
+                    {
+                        if ((path[i] & Input.Jump) != Input.Neutral)
+                        {
+                            sweepJumps.Add(i);
+                        }
+                    }
+                    for (int k = 0; k < sweepJumps.Count; k++)
+                    {
+                        int jump = k == sweepJumps.Count - 1
+                            ? path.FindLastIndex(i => (i & Input.Jump) != Input.Neutral)
+                            : sweepJumps[k];
+                        if (jump < 0)
+                        {
+                            continue;
+                        }
+                        sweepWork.AddLast(new List<(int Depth, Input Mask)>(excluded) { (jump + 1, Input.Jump) });
+                    }
+                }
+            }
+
             // Slower spellings of the shortest route: every input is held one frame longer at a time
             // and the whole thing is replayed, so only the variants that still reach the goal are
             // kept.

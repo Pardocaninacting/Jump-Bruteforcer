@@ -78,6 +78,14 @@ namespace Jump_Bruteforcer
         public int[] ClosedStates { get; } = new int[Map.WIDTH * Map.HEIGHT];
         public uint FrameCount { get; private set; }
 
+        /// <summary>
+        /// (frame, input feature) pairs the sweep may not use. Null leaves the sweep untouched. This
+        /// is what lets the collection ask the exhaustive sweep for the alternatives that re-time a
+        /// jump: the node based search claims a state for the first parent that reaches it and then
+        /// cannot follow a pruned route at all.
+        /// </summary>
+        public HashSet<(int Depth, Input Mask)>? Exclusions { get; set; }
+
         public LayeredSearch(CollisionMap map, (int x, double y) start, (int x, int y) goal, double startVSpeed, bool disableCactus, bool useVerticalBound = true, bool preferConcise = true)
         {
             _map = map;
@@ -498,6 +506,18 @@ namespace Jump_Bruteforcer
         /// <summary>Deduplicates, prunes and appends a successor. Returns true when it is the goal.</summary>
         private bool Add(Frontier next, State state, Input input, int parentIndex, int layer, uint frameBound, int runs)
         {
+            if (Exclusions != null)
+            {
+                // The child sits at depth layer + 1; forbidden features are matched by mask so the
+                // search cannot walk around the exclusion with an equivalent spelling of the input.
+                foreach ((int depth, Input mask) in Exclusions)
+                {
+                    if (depth == layer + 1 && (input & mask) == mask)
+                    {
+                        return false;
+                    }
+                }
+            }
             if (!InBounds(state.X, state.Y)) return false;
             ulong key = KeyOf(state);
             if (!_visited.Add(key)) return false;
