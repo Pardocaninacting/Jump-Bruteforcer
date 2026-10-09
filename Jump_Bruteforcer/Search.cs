@@ -152,6 +152,20 @@ namespace Jump_Bruteforcer
         }
 
         private AdmissibleDistance.Table? admissibleTable;
+        /// <summary>The inputs of the last solution the node search found, kept so the layered
+        /// search can compare its own solution against it.</summary>
+        private List<Input> lastInputs = new();
+
+        /// <summary>How many runs the notation of this path is written in.</summary>
+        internal static int InputChanges(List<Input> inputs)
+        {
+            int runs = 0;
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                if (i == 0 || inputs[i] != inputs[i - 1]) runs++;
+            }
+            return runs;
+        }
 
         public readonly uint[,] GoalDistance = new uint[Map.WIDTH, Map.HEIGHT];
         /// <summary>
@@ -266,8 +280,17 @@ namespace Jump_Bruteforcer
             if (LayeredUsesAStarBound)
             {
                 SearchResult reference = RunNodeSearch();
+                List<Input> referenceInputs = lastInputs;
                 uint bound = reference.Success ? (uint)ParseFrames(Strat) : uint.MaxValue;
                 inputs = bound == uint.MaxValue ? null : layered.RunWithBound(bound);
+                // The sweep carries a per state minimum of the input changes, but its
+                // deduplication only keeps the first arrival, so it can come out more verbose than
+                // the A* it was bounded by. Same frame count, so take whichever reads shorter.
+                if (inputs != null && referenceInputs.Count == inputs.Count
+                    && InputChanges(referenceInputs) < InputChanges(inputs))
+                {
+                    inputs = referenceInputs;
+                }
             }
             else
             {
@@ -351,6 +374,7 @@ namespace Jump_Bruteforcer
                     {
                         SearchElapsed = Stopwatch.GetElapsedTime(searchStartTime);
                         (List<Input> inputs, PointCollection points) = SearchOutput.GetPath(root, v.NodeIndex, pathLinks, CollisionMap);
+                        lastInputs = inputs;
                         TimeTaken = Stopwatch.GetElapsedTime(startTime).ToString(@"dd\:hh\:mm\:ss\.ff");
                         Macro = SearchOutput.GetMacro(inputs);
                         Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
@@ -443,8 +467,7 @@ namespace Jump_Bruteforcer
             return Math.Max(geometric, bound);
         }
 
-        internal static int ParseFrames(string strat)
-        {
+        internal static int ParseFrames(string strat)        {
             const string prefix = "Frames: ";
             if (!strat.StartsWith(prefix)) return int.MaxValue;
             int end = strat.IndexOf('\n');

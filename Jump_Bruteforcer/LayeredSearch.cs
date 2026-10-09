@@ -290,7 +290,7 @@ namespace Jump_Bruteforcer
 
             var cur = new Frontier();
             var next = new Frontier();
-            cur.Add(root.X, root.Y, root.VSpeed, (byte)root.Flags, 0, BucketOf(root));
+            cur.Add(root.X, root.Y, root.VSpeed, (byte)root.Flags, 0, BucketOf(root), 0);
             _visited.Add(KeyOf(root));
 
             for (int layer = 0; layer < Map.WIDTH * Map.HEIGHT; layer++)
@@ -360,14 +360,12 @@ namespace Jump_Bruteforcer
                             cur.Processed[member] = true;
                         }
                     }
-
-                    if (next.GoalIndex >= 0) return next.GoalIndex;
                 }
             }
-
             ClearOrder();
             if (beamWidth > 0) TrimToBeam(next, beamWidth);
-            return -1;
+            // The layer is finished, so GoalIndex is the fewest-changes goal of this layer.
+            return next.GoalIndex;
         }
 
         /// <summary>Groups the bucket members that share the exact vertical state.</summary>
@@ -473,7 +471,7 @@ namespace Jump_Bruteforcer
                             target = full;
                         }
                         emitted++;
-                        if (Add(next, target, input, cur.Idx[member], layer, frameBound)) return emitted;
+                        Add(next, target, input, cur.Idx[member], layer, frameBound, RunsTo(cur, member, input));
                     }
                 }
             }
@@ -487,13 +485,12 @@ namespace Jump_Bruteforcer
             SimulatedUpdates += n;
             for (int i = 0; i < n; i++)
             {
-                Add(next, _scratch[i].State, _scratch[i].Input, cur.Idx[index], layer, frameBound);
-                if (next.GoalIndex >= 0) return;
+                Add(next, _scratch[i].State, _scratch[i].Input, cur.Idx[index], layer, frameBound, RunsTo(cur, index, _scratch[i].Input));
             }
         }
 
         /// <summary>Deduplicates, prunes and appends a successor. Returns true when it is the goal.</summary>
-        private bool Add(Frontier next, State state, Input input, int parentIndex, int layer, uint frameBound)
+        private bool Add(Frontier next, State state, Input input, int parentIndex, int layer, uint frameBound, int runs)
         {
             if (!InBounds(state.X, state.Y)) return false;
             ulong key = KeyOf(state);
@@ -504,14 +501,29 @@ namespace Jump_Bruteforcer
             }
             int nodeIndex = _links.Add(parentIndex, input);
             ClosedStates[state.RoundedY * Map.WIDTH + state.X] += 1;
-            next.Add(state.X, state.Y, state.VSpeed, (byte)state.Flags, nodeIndex, BucketOf(state));
+            next.Add(state.X, state.Y, state.VSpeed, (byte)state.Flags, nodeIndex, BucketOf(state), runs);
             if (IsGoal(state))
             {
-                // The goal index has to be the path link, not the position inside the layer.
-                next.GoalIndex = nodeIndex;
+                // The whole layer is still expanded, so keep the fewest changes of all goals in it.
+                if (runs < next.GoalRuns)
+                {
+                    // The goal index has to be the path link, not the position inside the layer.
+                    next.GoalIndex = nodeIndex;
+                    next.GoalRuns = runs;
+                }
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Input changes of the frame that reaches this state, the number of runs the notation of
+        /// the path so far is written in. The first frame is always the first run.
+        /// </summary>
+        private int RunsTo(Frontier cur, int member, Input input)
+        {
+            int parentIndex = cur.Idx[member];
+            return cur.Runs[member] + (parentIndex == 0 || _links[parentIndex].Input != input ? 1 : 0);
         }
 
         private static bool InBounds(int x, double y) =>
@@ -602,7 +614,7 @@ namespace Jump_Bruteforcer
             {
                 int source = sorted[i];
                 trimmed.Add(frontier.X[source], frontier.Y[source], frontier.V[source],
-                    frontier.Flags[source], frontier.Idx[source], frontier.VKey[source]);
+                    frontier.Flags[source], frontier.Idx[source], frontier.VKey[source], frontier.Runs[source]);
             }
             frontier.CopyFrom(trimmed);
         }
@@ -617,9 +629,11 @@ namespace Jump_Bruteforcer
             public byte[] Flags = new byte[1024];
             public int[] Idx = new int[1024];
             public int[] VKey = new int[1024];
+            public ushort[] Runs = new ushort[1024];
             public bool[] Processed = new bool[1024];
             public int Count;
             public int GoalIndex = -1;
+            public int GoalRuns = int.MaxValue;
 
             public void EnsureProcessed()
             {
@@ -629,7 +643,7 @@ namespace Jump_Bruteforcer
 
             public State StateAt(int i) => new() { X = X[i], Y = Y[i], VSpeed = V[i], Flags = (Bools)Flags[i] };
 
-            public int Add(int x, double y, double v, byte flags, int index, int vkey)
+            public int Add(int x, double y, double v, byte flags, int index, int vkey, int runs)
             {
                 if (Count == X.Length) Grow();
                 X[Count] = x;
@@ -638,6 +652,7 @@ namespace Jump_Bruteforcer
                 Flags[Count] = flags;
                 Idx[Count] = index;
                 VKey[Count] = vkey;
+                Runs[Count] = (ushort)runs;
                 Count++;
                 return Count - 1;
             }
@@ -651,14 +666,17 @@ namespace Jump_Bruteforcer
                 Array.Copy(other.Flags, Flags, other.Count);
                 Array.Copy(other.Idx, Idx, other.Count);
                 Array.Copy(other.VKey, VKey, other.Count);
+                Array.Copy(other.Runs, Runs, other.Count);
                 Count = other.Count;
                 GoalIndex = other.GoalIndex;
+                GoalRuns = other.GoalRuns;
             }
 
             public void Clear()
             {
                 Count = 0;
                 GoalIndex = -1;
+                GoalRuns = int.MaxValue;
             }
 
             private void Grow(int needed = 0)
@@ -670,6 +688,7 @@ namespace Jump_Bruteforcer
                 Array.Resize(ref Flags, capacity);
                 Array.Resize(ref Idx, capacity);
                 Array.Resize(ref VKey, capacity);
+                Array.Resize(ref Runs, capacity);
                 Array.Resize(ref Processed, capacity);
             }
         }
