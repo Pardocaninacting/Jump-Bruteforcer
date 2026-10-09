@@ -59,6 +59,7 @@ namespace Jump_Bruteforcer
         private (int x, int y) goal;
         private string _strat = "";
         private bool disableCactus = false;
+        private int nudgePenalty = 1;
         private CollisionMap _collisionMap = new(new Dictionary<(int, int), CollisionType>(), null);
         private PointCollection playerPath = new();
         private double startingVSpeed = 0;
@@ -106,6 +107,13 @@ namespace Jump_Bruteforcer
         /// this mechanic, so it is off by default.
         /// </summary>
         public bool AllowNudge { get { return Player.AllowNudge; } set { Player.AllowNudge = value; OnPropertyChanged(); } }
+        /// <summary>
+        /// Extra cost of a frame that uses the A/D nudge. 0 is the fastest sequence, 1 makes an
+        /// A/D frame pay for itself, 2 keeps A/D for the screens that cannot be solved without it.
+        /// A nudge frame walks 4px instead of 3, so without a penalty the search spends one every
+        /// frame, which no player can press. Has no effect while AllowNudge is off.
+        /// </summary>
+        public int NudgePenalty { get { return nudgePenalty; } set { nudgePenalty = Math.Max(0, value); OnPropertyChanged(); } }
         public String TimeTaken { get { return timeTaken; } set { timeTaken = value; OnPropertyChanged(); } }
         public String Macro { get { return macro; } set { macro = value; } }
         // Numeric timings exclude map loading and result rendering/export.
@@ -310,6 +318,7 @@ namespace Jump_Bruteforcer
 
             bool disableCactus = DisableCactus;
             int heuristicWeight = Math.Max(1, HeuristicWeight);
+            uint nudgePenalty = (uint)Math.Max(0, NudgePenalty);
             // FacingRight is invisible to the physics on a map without vines, so it is
             // left out of the deduplication key and roughly halves the state space.
             bool ignoreFacing = !CollisionMap.HasVines && !PlayerNode.DisableFacingNormalization;
@@ -380,7 +389,14 @@ namespace Jump_Bruteforcer
                             continue;
                         }
 
+                        // A nudge frame walks one pixel further than a normal one, so it has to
+                        // earn that pixel back through NudgePenalty. The heuristic stays a lower
+                        // bound on the cost because the cost can only grow.
                         uint newCost = currentPathCost + 1;
+                        if (nudgePenalty > 0 && (candidate.Input & (Input.NudgeLeft | Input.NudgeRight)) != Input.Neutral)
+                        {
+                            newCost += nudgePenalty;
+                        }
                         int roundedY = candidate.State.RoundedY;
                         int pixelIndex = PixelIndex(candidate.State.X, roundedY);
                         if (CollectHeatMap && (pixelInfo[pixelIndex] & 0xFFFF0000u) != 0xFFFF0000u)
