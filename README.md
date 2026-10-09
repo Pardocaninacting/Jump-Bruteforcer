@@ -13,7 +13,7 @@ Or you can type the coordinates into the textboxes.
 Then you can click 'Start search' and get up and grab a cup of coffee. Hopefully it will be done when you get back.
 You can right click the inputs list to copy it to the clipboard.
 Tick 'Disable cactus' before starting a search to forbid strats that release the jump key more than once per press.
-Tick 'Allow A/D (d-trick)' to let the search nudge the kid one pixel sideways with A or D while it stands on a block or platform. Only some engines have that mechanic.
+Tick 'Allow A/D (d-trick)' to let the search nudge the kid one pixel sideways with A or D while it stands on a block or platform. Only some engines have that mechanic; the dropdown beside it decides how much the search has to gain from an A/D frame.
 Tick 'Optimal mode' to guarantee the shortest input sequence: the search first finds a solution as fast as it can, then sweeps the state space layer by layer inside that bound. It is roughly twice as slow as the default search, which is very fast but can be a couple of frames off on large screens.
 
 The bruteforcer supports solids, playerkillers, water (1, 2, & 3), platforms, vines, and gravity flippers.

@@ -65,6 +65,12 @@
                   ToolTip="Forbid strats that release the jump key more than once per press (cactus). Takes effect on the next search."/>
         <CheckBox Content="Allow A/D (d-trick)" Canvas.Left="870" Canvas.Top="104" IsChecked="{Binding AllowNudge}"
                   ToolTip="Let the search nudge the kid one pixel sideways with A or D while it stands on a block or platform. Only some engines have this mechanic, and it makes the search slower. Takes effect on the next search."/>
+        <ComboBox Canvas.Left="1030" Canvas.Top="102" Width="120" SelectedIndex="{Binding NudgePenalty, Mode=TwoWay}"
+                  ToolTip="What an A/D frame has to be worth. Fastest never charges for it, Balanced makes it pay for itself, Needed only keeps A/D for the screens that cannot be solved without it. Optimal mode ignores this and always returns the shortest sequence.">
+            <ComboBoxItem Content="Fastest"/>
+            <ComboBoxItem Content="Balanced"/>
+            <ComboBoxItem Content="Needed only"/>
+        </ComboBox>
 
         <ScrollViewer Canvas.Left="872"  Canvas.Top="126" Height="522"  Width="256" Content="{Binding Strat}" HorizontalScrollBarVisibility="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" VerticalScrollBarVisibility="Auto"/>
         <Button x:Name="CopyMacroButton" Content="Copy Macro" Canvas.Left="1060" Canvas.Top="10" Click="CopyMacroButton_Click"/>
