@@ -353,26 +353,11 @@ namespace Jump_Bruteforcer
                 misses = lastInputs.Count != frames || !Remember(gathered, frames, 0, threshold, seen) ? misses + 1 : 0;
             }
 
-            // The cactus free solution is a different kind of candidate: often a few frames longer,
-            // usually easier to play, and it never shows up in the unrestricted list because the
-            // search always spends the cactus releases it is allowed to use.
-            if (!DisableCactus)
-            {
-                DisableCactus = true;
-                try
-                {
-                    if (UseLayeredBfs) RunLayered(); else RunNodeSearch();
-                }
-                finally
-                {
-                    DisableCactus = false;
-                    PlayerNode.RerollSeed = 0;
-                }
-                if (lastInputs.Count > 0)
-                {
-                    Remember(gathered, lastInputs.Count, lastInputs.Count - frames, threshold, seen);
-                }
-            }
+            // The reroll only reorders equally short solutions, so a screen whose other routes are a
+            // few frames slower would still show a single entry. Slower spellings of the same route
+            // are generated instead, by holding an input one frame longer and replaying: that is what
+            // turns "8f 3p" into the "8f 4p ... 8f 10p" family.
+            AddTimingVariants(gathered, frames, seen);
             extra.Stop();
 
             // One entry per vertical structure, the fewest changes of that structure, best first.
@@ -429,6 +414,63 @@ namespace Jump_Bruteforcer
                 Macro, Strat, PlayerPath, fingerprint, SearchOutput.GetVerticalInputString(lastInputs, true)));
             return true;
         }
+
+        /// <summary>
+        /// Slower spellings of the shortest route: every input is held one frame longer at a time and
+        /// the whole thing is replayed, so only the variants that still reach the goal are kept.
+        /// Distances are not filtered here, the vertical structure is what separates them.
+        /// </summary>
+        private void AddTimingVariants(List<SolutionCandidate> gathered, int frames, HashSet<string> seen)
+        {
+            const int MaxExtraFrames = 8;
+            int cap = CandidateCount * 3;
+            var best = new List<Input>(lastInputs);
+            for (int index = 0; index < best.Count && gathered.Count < cap; index++)
+            {
+                for (int pad = 1; pad <= MaxExtraFrames && gathered.Count < cap; pad++)
+                {
+                    var variant = new List<Input>(best.Count + pad);
+                    variant.AddRange(best);
+                    for (int repeat = 0; repeat < pad; repeat++)
+                    {
+                        variant.Insert(index, best[index]);
+                    }
+                    if (!ReachesGoal(variant))
+                    {
+                        continue;
+                    }
+                    string fingerprint = Fingerprint(variant);
+                    if (!seen.Add(fingerprint))
+                    {
+                        continue;
+                    }
+                    gathered.Add(new SolutionCandidate(gathered.Count + 1, variant.Count,
+                        InputChanges(variant), variant.Count - frames, SearchOutput.GetMacro(variant),
+                        Strategy(variant), SearchOutput.GetPathPoints(new PlayerNode(start.x, start.y, startingVSpeed), variant, CollisionMap),
+                        fingerprint, SearchOutput.GetVerticalInputString(variant, true)));
+                }
+            }
+        }
+
+        /// <summary>Replays the inputs and reports whether the kid finishes the screen.</summary>
+        private bool ReachesGoal(List<Input> inputs)
+        {
+            PlayerNode current = new(start.x, start.y, startingVSpeed);
+            foreach (Input input in inputs)
+            {
+                PlayerNode? next = current.NewState(input, CollisionMap);
+                if (next is null)
+                {
+                    return false;
+                }
+                current = next;
+            }
+            return Math.Abs(current.State.X - goal.x) <= 1 && current.State.RoundedY == goal.y;
+        }
+
+        private static string Strategy(List<Input> inputs) =>
+            $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\n" +
+            $"Horizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
 
         /// <summary>Frames of the two routes that do not visit the same positions.</summary>
         private static int RouteDistance(string left, string right)

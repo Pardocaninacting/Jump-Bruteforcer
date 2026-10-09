@@ -45,9 +45,9 @@ namespace Jump_Bruteforcer
         /// <summary>How many spellings of this route were collected.</summary>
         public int Variants { get; set; } = 1;
 
-        /// <summary>How the candidate is listed in the UI.</summary>
+        /// <summary>How the candidate is listed in the UI. Kept short: the structure can be long.</summary>
         public string Label => FrameDelta > 0
-            ? $"#{Index}  {Frames}f (+{FrameDelta}f)  {Runs} changes  [{Structure}]"
-            : $"#{Index}  {Frames}f  {Runs} changes  [{Structure}]";
+            ? $"#{Index}  {Frames}f (+{FrameDelta}f)  {Runs} changes" + (Variants > 1 ? $"  ({Variants} spellings)" : "")
+            : $"#{Index}  {Frames}f  {Runs} changes" + (Variants > 1 ? $"  ({Variants} spellings)" : "");
     }
 }
