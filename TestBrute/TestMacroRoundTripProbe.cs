@@ -150,7 +150,10 @@ namespace TestBrute
             {
                 if (segments[i].Length == 0)
                 {
-                    frames.Add(previous);
+                    // An empty frame only means "nothing changed". The direction keys are the only
+                    // ones the exporter keeps held across frames; jump, release and the nudges are
+                    // written as taps, so they must not be carried over.
+                    frames.Add(previous & (Input.Left | Input.Right));
                     continue;
                 }
                 Input input = Input.Neutral;

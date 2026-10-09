@@ -614,6 +614,44 @@ namespace Jump_Bruteforcer
             return Math.Abs(current.State.X - goal.x) <= 1 && current.State.RoundedY == goal.y;
         }
 
+        /// <summary>
+        /// Drops direction input the screen does not need, without touching the frame count: the
+        /// whole solution first, which is the degenerate case of falling through open air, then one
+        /// run at a time. A candidate is only taken when the screen is still finished with strictly
+        /// fewer runs, so this can never make a solution worse.
+        /// </summary>
+        private List<Input> SimplifyDirections(List<Input> inputs)
+        {
+            var best = new List<Input>(inputs);
+            var stripped = best.Select(i => i & ~(Input.Left | Input.Right)).ToList();
+            if (InputChanges(stripped) < InputChanges(best) && ReachesGoal(stripped))
+            {
+                best = stripped;
+            }
+            bool improved = true;
+            while (improved)
+            {
+                improved = false;
+                int start = 0;
+                for (int i = 1; i <= best.Count; i++)
+                {
+                    if (i != best.Count && best[i] == best[start]) continue;
+                    var candidate = new List<Input>(best);
+                    for (int frame = start; frame < i; frame++)
+                    {
+                        candidate[frame] &= ~(Input.Left | Input.Right);
+                    }
+                    if (InputChanges(candidate) < InputChanges(best) && ReachesGoal(candidate))
+                    {
+                        best = candidate;
+                        improved = true;
+                        break;
+                    }
+                    start = i;
+                }
+            }
+            return best;
+        }
         private static string Strategy(List<Input> inputs) =>
             $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\n" +
             $"Horizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
@@ -728,6 +766,11 @@ namespace Jump_Bruteforcer
             PointCollection points = SearchOutput.GetPathPoints(root, inputs, CollisionMap);
             PlayerPath = points;
             lastInputs = inputs;
+            // Direction input the screen does not need only pads the notation.
+            if (PreferConcise)
+            {
+                inputs = SimplifyDirections(inputs);
+            }
             Macro = SearchOutput.GetMacro(inputs);
             Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
             var end = points.Last();
@@ -800,6 +843,11 @@ namespace Jump_Bruteforcer
                         (List<Input> inputs, PointCollection points) = SearchOutput.GetPath(root, v.NodeIndex, pathLinks, CollisionMap);
                         lastInputs = inputs;
                         TimeTaken = Stopwatch.GetElapsedTime(startTime).ToString(@"dd\:hh\:mm\:ss\.ff");
+                        // Direction input the screen does not need only pads the notation.
+                        if (PreferConcise)
+                        {
+                            inputs = SimplifyDirections(inputs);
+                        }
                         Macro = SearchOutput.GetMacro(inputs);
                         Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
                         PlayerPath = points;

@@ -76,7 +76,9 @@ namespace TestBrute
             List<Input> found = Parse(result.Macro);
             List<Input> stripped = found.Select(i => i & ~(Input.Left | Input.Right)).ToList();
             Reaches(map, (100, 100, 100, 500, "tomo"), stripped).Should().BeTrue();
-            Runs(stripped).Should().BeLessThan(Runs(found), "the direction bits only pad the notation");
+            found.Count.Should().Be(58);
+            Runs(found).Should().BeLessThanOrEqualTo(4, "the search drops the direction input the fall does not need");
+            Runs(stripped).Should().BeLessThanOrEqualTo(Runs(found));
         }
 
         private static bool Reaches(Map map, (int x, double y, int gx, int gy, string name) c, List<Input> inputs)
@@ -112,7 +114,7 @@ namespace TestBrute
             {
                 if (segments[i].Length == 0)
                 {
-                    frames.Add(previous);
+                    frames.Add(previous & (Input.Left | Input.Right));  // taps are not carried over
                     continue;
                 }
                 Input input = Input.Neutral;
