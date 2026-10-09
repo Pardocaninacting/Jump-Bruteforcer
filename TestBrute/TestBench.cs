@@ -33,11 +33,12 @@ namespace TestBrute
         };
 
         private void Run(string config, int sx, double sy, int gx, int gy, string name,
-            bool share, bool heat, bool optimal)
+            bool share, bool heat, bool optimal, bool nudge = false)
         {
             Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\{name}.jmap"));
             PlayerNode.ShareHorizontal = share;
             Search.CollectHeatMap = heat;
+            Player.AllowNudge = nudge;
             Search s = new((sx, sy), (gx, gy), map.CollisionMap)
             {
                 UseLayeredBfs = optimal,
@@ -51,6 +52,7 @@ namespace TestBrute
                              $"{GC.GetTotalMemory(false)}");
             PlayerNode.ShareHorizontal = true;
             Search.CollectHeatMap = true;
+            Player.AllowNudge = false;
         }
 
         [Fact]
@@ -124,6 +126,50 @@ namespace TestBrute
                 {
                     Run($"r{rep}-share", c.x, c.y, c.gx, c.gy, c.name, true, true, false);
                     Run($"r{rep}-noshare", c.x, c.y, c.gx, c.gy, c.name, false, true, false);
+                }
+            }
+        }
+
+        /// <summary>Maps with a lot of ground time, where the nudge adds the most neighbours.</summary>
+        public static (int x, double y, int gx, int gy, string name)[] NudgeCases =
+        {
+            (452, 407.4, 482, 343, "minif"),
+            (420, 407.4, 477, 375, "ground_dplane"),
+            (410, 407.4, 485, 407, "co"),
+            (388, 407.4, 541, 407, "platform_invert"),
+            (399, 487.4, 399, 295, "platform_teleport"),
+            (399, 487.4, 399, 295, "platform_elevator"),
+            (401, 407.4, 602, 407, "dt"),          // only solvable with the nudge
+        };
+
+        [Fact]
+        [Trait("Category", "Bench")]
+        public void BenchNudge()
+        {
+            // Interleaved on/off repetitions, min of N: the option is a global, so the two
+            // configurations have to be flipped around each run.
+            output.WriteLine("CSV,config,map,success,frames,visited,ms,planeBytes,linkBytes,managedBytes");
+            foreach (var c in NudgeCases)
+            {
+                for (int rep = 0; rep < 3; rep++)
+                {
+                    Run($"n{rep}-off", c.x, c.y, c.gx, c.gy, c.name, true, true, false, nudge: false);
+                    Run($"n{rep}-on", c.x, c.y, c.gx, c.gy, c.name, true, true, false, nudge: true);
+                }
+            }
+        }
+
+        [Fact]
+        [Trait("Category", "Bench")]
+        public void BenchNudgeBig()
+        {
+            output.WriteLine("CSV,config,map,success,frames,visited,ms,planeBytes,linkBytes,managedBytes");
+            foreach (var c in new[] { (753, 183, 217, 220, "nabla_2"), (49, 567, 771, 231, "i_wanna_x") })
+            {
+                for (int rep = 0; rep < 2; rep++)
+                {
+                    Run($"b{rep}-off", c.Item1, c.Item2, c.Item3, c.Item4, c.Item5, true, true, false, nudge: false);
+                    Run($"b{rep}-on", c.Item1, c.Item2, c.Item3, c.Item4, c.Item5, true, true, false, nudge: true);
                 }
             }
         }
