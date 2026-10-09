@@ -197,10 +197,18 @@ namespace TestBrute
             search.Candidates.Select(c => c.Fingerprint).Distinct().Count().Should().Be(search.Candidates.Count);
 
             // The kept routes never repeat, and the reported time covers the reruns, not just the
-            // first search. How far apart they actually are is measured in
-            // _dev/多解输出_设计与实验计划.md 9: the shuffle only reorders candidates inside the
-            // same priority bucket, so the spread is much narrower than the tie break E1b measured.
+            // first search. The bucket jitter only reorders the frontier inside one priority level,
+            // so every kept candidate still has the frame count asserted above.
             TimeSpan.Parse(search.TimeTaken).Should().BeGreaterThan(TimeSpan.Zero);
+            output.WriteLine($"collected {search.Candidates.Count}: " +
+                string.Join(" | ", search.Candidates.Select((c, i) => i == 0 ? $"{c.Frames}f {c.Runs}r" :
+                    $"{c.Frames}f {c.Runs}r d={RouteDistanceOf(c, search.Candidates[0])}")));
+
+            // The jitter has to reach routes that are visibly different, not just rewordings of the
+            // same one: at least three of them stay a fifth of the screen apart from the first.
+            search.Candidates.Count.Should().BeGreaterThanOrEqualTo(3);
+            search.Candidates.Count(c => RouteDistanceOf(c, search.Candidates[0]) >= search.Candidates[0].Frames / 5)
+                .Should().BeGreaterThanOrEqualTo(3);
 
             search.SelectedCandidateIndex.Should().Be(0);
             search.Strat.Should().Be(search.Candidates[0].Strat);

@@ -29,9 +29,32 @@ namespace Jump_Bruteforcer
         private int _live;
         private int _minBucket;
 
+        /// <summary>
+        /// When set, a push lands in bucket f or in one of the Jitter buckets above it. That is what
+        /// reorders the frontier inside one priority level, so two runs of the same search claim
+        /// states through different equally good parents and return different equally short
+        /// solutions. Zero keeps the historical deterministic order.
+        /// </summary>
+        public int Jitter;
+        private uint _random = 1;
+
         public BucketQueue()
         {
             Array.Fill(_heads, -1);
+        }
+
+        /// <summary>Seeds the jitter so a run can be repeated exactly.</summary>
+        public void SeedJitter(int seed)
+        {
+            _random = (uint)seed * 2654435761u + 1u;
+        }
+
+        private uint NextRandom()
+        {
+            _random ^= _random << 13;
+            _random ^= _random >> 17;
+            _random ^= _random << 5;
+            return _random;
         }
 
         public int Count => _live;
@@ -113,6 +136,10 @@ namespace Jump_Bruteforcer
         private int BucketOf(uint cost, uint scaledHeuristic)
         {
             ulong f = (ulong)cost + scaledHeuristic;
+            if (Jitter > 0)
+            {
+                f += NextRandom() % (uint)(Jitter + 1);
+            }
             if (f >= (ulong)_heads.Length) GrowHeads((int)Math.Min(f + 1, int.MaxValue - 1));
             return (int)f;
         }

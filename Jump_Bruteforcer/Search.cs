@@ -534,6 +534,14 @@ namespace Jump_Bruteforcer
             uint rootDistance = admissible ? AdmissibleDistance.At(admissibleTable!.Value, root.State.X, root.State.Y) : Distance(root);
             rootDistance = Combine(rootDistance, verticalTable, root.State);
             var openSet = new BucketQueue();
+            if (PlayerNode.RerollSeed != 0)
+            {
+                // Looking for another equal solution: let pushes drift up to two buckets so the
+                // frontier is explored in a different order and states are claimed by different
+                // equally good parents. Only the collection reruns set a seed.
+                openSet.Jitter = 2;
+                openSet.SeedJitter(PlayerNode.RerollSeed);
+            }
             openSet.Push(new SearchNode(root.State, root.NodeIndex), 0, rootDistance, heuristicWeight);
 
             var pathLinks = new PathLinkStore();
