@@ -333,11 +333,12 @@ namespace Jump_Bruteforcer
             TimeSpan firstElapsed = SearchElapsed;
             int threshold = Math.Max(1, frames / 10);
             var seen = new HashSet<string>();
-            Remember(frames, threshold, seen);
+            var gathered = new List<SolutionCandidate>();
+            Remember(gathered, frames, 0, threshold, seen);
 
             var extra = Stopwatch.StartNew();
             int misses = 0;
-            for (int attempt = 1; attempt < CandidateCount * 3 && Candidates.Count < CandidateCount && misses < 5; attempt++)
+            for (int attempt = 1; attempt < CandidateCount * 3 && gathered.Count < CandidateCount && misses < 5; attempt++)
             {
                 PlayerNode.RerollSeed = Random.Shared.Next(1, int.MaxValue);
                 try
@@ -349,9 +350,55 @@ namespace Jump_Bruteforcer
                     PlayerNode.RerollSeed = 0;
                 }
                 // Only equally short routes count, and only when they stay apart from the ones kept.
-                misses = lastInputs.Count != frames || !Remember(frames, threshold, seen) ? misses + 1 : 0;
+                misses = lastInputs.Count != frames || !Remember(gathered, frames, 0, threshold, seen) ? misses + 1 : 0;
+            }
+
+            // The cactus free solution is a different kind of candidate: often a few frames longer,
+            // usually easier to play, and it never shows up in the unrestricted list because the
+            // search always spends the cactus releases it is allowed to use.
+            if (!DisableCactus)
+            {
+                DisableCactus = true;
+                try
+                {
+                    if (UseLayeredBfs) RunLayered(); else RunNodeSearch();
+                }
+                finally
+                {
+                    DisableCactus = false;
+                    PlayerNode.RerollSeed = 0;
+                }
+                if (lastInputs.Count > 0)
+                {
+                    Remember(gathered, lastInputs.Count, lastInputs.Count - frames, threshold, seen);
+                }
             }
             extra.Stop();
+
+            // One entry per vertical structure, the fewest changes of that structure, best first.
+            var groups = new Dictionary<string, SolutionCandidate>();
+            foreach (SolutionCandidate candidate in gathered)
+            {
+                if (groups.TryGetValue(candidate.Structure, out SolutionCandidate? kept))
+                {
+                    kept.Variants++;
+                    if (candidate.Runs < kept.Runs)
+                    {
+                        groups[candidate.Structure] = candidate;
+                        candidate.Variants = kept.Variants;
+                    }
+                }
+                else
+                {
+                    groups[candidate.Structure] = candidate;
+                }
+            }
+            foreach (SolutionCandidate candidate in groups.Values.OrderBy(c => c.Frames).ThenBy(c => c.Runs))
+            {
+                Candidates.Add(new SolutionCandidate(Candidates.Count + 1, candidate.Frames, candidate.Runs,
+                    candidate.FrameDelta, candidate.Macro, candidate.Strat, candidate.Points,
+                    candidate.Fingerprint, candidate.Structure) { Variants = candidate.Variants });
+            }
 
             Show(Candidates[0]);
             SelectedCandidateIndex = 0;
@@ -364,21 +411,22 @@ namespace Jump_Bruteforcer
         /// Records the solution the last search left behind, unless its route is already there or it
         /// stays too close to one that is. Returns whether it was kept.
         /// </summary>
-        private bool Remember(int frames, int threshold, HashSet<string> seen)
+        private bool Remember(List<SolutionCandidate> gathered, int frames, int frameDelta, int threshold, HashSet<string> seen)
         {
             string fingerprint = Fingerprint(lastInputs);
             if (!seen.Add(fingerprint))
             {
                 return false;
             }
-            foreach (SolutionCandidate kept in Candidates)
+            foreach (SolutionCandidate kept in gathered)
             {
                 if (RouteDistance(kept.Fingerprint, fingerprint) < threshold)
                 {
                     return false;
                 }
             }
-            Candidates.Add(new SolutionCandidate(Candidates.Count + 1, frames, InputChanges(lastInputs), Macro, Strat, PlayerPath, fingerprint));
+            gathered.Add(new SolutionCandidate(gathered.Count + 1, frames, InputChanges(lastInputs), frameDelta,
+                Macro, Strat, PlayerPath, fingerprint, SearchOutput.GetVerticalInputString(lastInputs, true)));
             return true;
         }
 

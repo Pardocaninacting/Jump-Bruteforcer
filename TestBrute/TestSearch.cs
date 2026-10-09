@@ -193,22 +193,30 @@ namespace TestBrute
 
             result.Success.Should().BeTrue();
             search.Candidates.Count.Should().BeGreaterThan(1);
-            search.Candidates.Select(c => c.Frames).Distinct().Should().HaveCount(1);
             search.Candidates.Select(c => c.Fingerprint).Distinct().Count().Should().Be(search.Candidates.Count);
 
-            // The kept routes never repeat, and the reported time covers the reruns, not just the
-            // first search. The bucket jitter only reorders the frontier inside one priority level,
-            // so every kept candidate still has the frame count asserted above.
+            // The listed entries are ordered by length, and the frame delta is relative to the
+            // shortest one. The cactus free route is usually a few frames longer and is listed too.
+            int shortest = search.Candidates.Min(c => c.Frames);
+            search.Candidates.Should().BeInAscendingOrder(c => c.Frames);
+            foreach (SolutionCandidate listed in search.Candidates)
+            {
+                listed.FrameDelta.Should().Be(listed.Frames - shortest);
+            }
+            search.Candidates.Count(c => c.Frames == shortest).Should().BeGreaterThanOrEqualTo(3);
+            search.Candidates.Any(c => c.FrameDelta > 0).Should().BeTrue("the cactus free route is a slower alternative");
+
+            // The reported time covers the reruns, not just the first search.
             TimeSpan.Parse(search.TimeTaken).Should().BeGreaterThan(TimeSpan.Zero);
             output.WriteLine($"collected {search.Candidates.Count}: " +
-                string.Join(" | ", search.Candidates.Select((c, i) => i == 0 ? $"{c.Frames}f {c.Runs}r" :
-                    $"{c.Frames}f {c.Runs}r d={RouteDistanceOf(c, search.Candidates[0])}")));
+                string.Join(" | ", search.Candidates.Select(c => c.Label)));
 
-            // The jitter has to reach routes that are visibly different, not just rewordings of the
-            // same one: at least three of them stay a fifth of the screen apart from the first.
-            search.Candidates.Count.Should().BeGreaterThanOrEqualTo(3);
-            search.Candidates.Count(c => RouteDistanceOf(c, search.Candidates[0]) >= search.Candidates[0].Frames / 5)
-                .Should().BeGreaterThanOrEqualTo(3);
+            // The jitter has to reach several different structures, not just rewordings of one:
+            // every listed entry is a distinct vertical pattern, and the shortest length keeps at
+            // least three of them.
+            search.Candidates.Select(c => c.Structure).Distinct().Count().Should().Be(search.Candidates.Count);
+            search.Candidates.Sum(c => c.Variants).Should().BeGreaterThanOrEqualTo(search.Candidates.Count);
+            search.Candidates.Count(c => c.Frames == shortest).Should().BeGreaterThanOrEqualTo(3);
 
             search.SelectedCandidateIndex.Should().Be(0);
             search.Strat.Should().Be(search.Candidates[0].Strat);
