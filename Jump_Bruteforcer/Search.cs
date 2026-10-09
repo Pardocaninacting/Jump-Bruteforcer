@@ -763,14 +763,16 @@ namespace Jump_Bruteforcer
                 return new SearchResult(Strat, "", false, layered.VisitedStates);
             }
 
-            PointCollection points = SearchOutput.GetPathPoints(root, inputs, CollisionMap);
-            PlayerPath = points;
-            lastInputs = inputs;
-            // Direction input the screen does not need only pads the notation.
+            // Direction input the screen does not need only pads the notation, so it is dropped
+            // before anything is derived from the inputs: the drawn path, the exported macro and the
+            // candidate list all have to describe the solution that is actually shown.
             if (PreferConcise)
             {
                 inputs = SimplifyDirections(inputs);
             }
+            PointCollection points = SearchOutput.GetPathPoints(root, inputs, CollisionMap);
+            PlayerPath = points;
+            lastInputs = inputs;
             Macro = SearchOutput.GetMacro(inputs);
             Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
             var end = points.Last();
@@ -840,14 +842,16 @@ namespace Jump_Bruteforcer
                     if (v.IsGoal(goal) || CollisionMap.onWarp(v.X, v.Y))
                     {
                         SearchElapsed = Stopwatch.GetElapsedTime(searchStartTime);
-                        (List<Input> inputs, PointCollection points) = SearchOutput.GetPath(root, v.NodeIndex, pathLinks, CollisionMap);
-                        lastInputs = inputs;
+                        (List<Input> inputs, PointCollection _) = SearchOutput.GetPath(root, v.NodeIndex, pathLinks, CollisionMap);
                         TimeTaken = Stopwatch.GetElapsedTime(startTime).ToString(@"dd\:hh\:mm\:ss\.ff");
-                        // Direction input the screen does not need only pads the notation.
+                        // Direction input the screen does not need only pads the notation, so it is
+                        // dropped before the path is drawn or the macro is written.
                         if (PreferConcise)
                         {
                             inputs = SimplifyDirections(inputs);
                         }
+                        PointCollection points = SearchOutput.GetPathPoints(root, inputs, CollisionMap);
+                        lastInputs = inputs;
                         Macro = SearchOutput.GetMacro(inputs);
                         Strat = $"Frames: {inputs.Count}\n\nVertical inputs:\n{SearchOutput.GetVerticalInputString(inputs, true)}\n\nHorizontal inputs:\n{SearchOutput.GetHorizontalInputString(inputs)}\n\nInputs per frame:\n{SearchOutput.GetInputString(inputs)}";
                         PlayerPath = points;
