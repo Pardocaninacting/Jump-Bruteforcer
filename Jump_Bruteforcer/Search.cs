@@ -64,6 +64,45 @@ namespace Jump_Bruteforcer
         private int nudgePenalty = 1;
         private bool preferConcise = true;
         private bool reroll = false;
+        /// <summary>
+        /// Forbidden (frame, input feature) pairs used while collecting alternatives. Set only
+        /// during collection, so the ordinary search never pays for the check.
+        /// </summary>
+        private HashSet<(int Depth, Input Mask)>? exclusions;
+
+        /// <summary>
+        /// True when the input carries every bit of one of the features forbidden at this frame.
+        /// Forbidding the jump bit rather than the exact input is what makes the next search time
+        /// the jump differently instead of reaching for an equivalent spelling of the same input.
+        /// </summary>
+        private bool IsExcluded(int depth, Input input)
+        {
+            if (exclusions == null)
+            {
+                return false;
+            }
+            foreach ((int at, Input mask) in exclusions)
+            {
+                if (at == depth && (input & mask) == mask)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Frame of the last jump press of a solution, or -1 when it never jumps.</summary>
+        private static int LastJumpFrame(List<Input> inputs)
+        {
+            for (int i = inputs.Count - 1; i >= 0; i--)
+            {
+                if ((inputs[i] & Input.Jump) != Input.Neutral)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
         private int candidateCount = 1;
         private int selectedCandidate = -1;
         private CollisionMap _collisionMap = new(new Dictionary<(int, int), CollisionType>(), null);
@@ -354,9 +393,39 @@ namespace Jump_Bruteforcer
             }
 
             // The reroll only reorders equally short solutions, so a screen whose other routes are a
-            // few frames slower would still show a single entry. Slower spellings of the same route
-            // are generated instead, by holding an input one frame longer and replaying: that is what
-            // turns "8f 3p" into the "8f 4p ... 8f 10p" family.
+            // few frames slower would still show a single entry. Each round forbids the jump of the
+            // solution just found, which forces the next search to time that jump differently: that
+            // is what reaches the family of differently timed routes a screen usually has.
+            const int MaxVariantFrames = 12;
+            exclusions = new HashSet<(int Depth, Input Mask)>();
+            try
+            {
+                for (int round = 0; round < CandidateCount && gathered.Count < CandidateCount * 2; round++)
+                {
+                    int jump = LastJumpFrame(lastInputs);
+                    if (jump < 0)
+                    {
+                        break;
+                    }
+                    exclusions.Add((jump + 1, Input.Jump));
+                    PlayerNode.RerollSeed = 0;
+                    if (UseLayeredBfs) RunLayered(); else RunNodeSearch();
+                    if (Strat == "SEARCH FAILURE" || lastInputs.Count - frames > MaxVariantFrames)
+                    {
+                        break;
+                    }
+                    Remember(gathered, lastInputs.Count, lastInputs.Count - frames, 1, seen);
+                }
+            }
+            finally
+            {
+                exclusions = null;
+                PlayerNode.RerollSeed = 0;
+            }
+
+            // Slower spellings of the shortest route: every input is held one frame longer at a time
+            // and the whole thing is replayed, so only the variants that still reach the goal are
+            // kept.
             AddTimingVariants(gathered, frames, seen);
             extra.Stop();
 
@@ -635,6 +704,9 @@ namespace Jump_Bruteforcer
             openSet.Push(new SearchNode(root.State, root.NodeIndex), 0, rootDistance, heuristicWeight);
 
             var pathLinks = new PathLinkStore();
+            // Frame index of every path link, needed to forbid a frame while collecting. Index 0 is
+            // the root sentinel.
+            List<int>? depths = exclusions == null ? null : new List<int> { 0 };
             pathLinks.ReserveRootSentinel();
             var visitedStateKeys = new VisitedStateSet();
             var neighborCandidates = new NeighborCandidate[PlayerNode.MaxNeighborCount];
@@ -680,6 +752,14 @@ namespace Jump_Bruteforcer
                     for (int i = 0; i < neighborCount; i++)
                     {
                         NeighborCandidate candidate = neighborCandidates[i];
+                        // Collecting alternatives: this frame may not use a forbidden feature, so the
+                        // solution has to time it differently. Checked before the state is claimed.
+                        int childDepth = depths == null ? 0 : depths[v.NodeIndex] + 1;
+                        if (IsExcluded(childDepth, candidate.Input))
+                        {
+                            continue;
+                        }
+
                         // A state is marked discovered when it is first enqueued.
                         // Consequently the old openSet.Contains/UpdatePriority
                         // branch could never be reached for an equal state.
@@ -707,6 +787,7 @@ namespace Jump_Bruteforcer
                             : (pixelInfo[pixelIndex] & HeuristicMask) is var rawDistance && rawDistance == HeuristicUnreachable ? uint.MaxValue : rawDistance;
                         distance = Combine(distance, verticalTable, candidate.State);
                         int nodeIndex = pathLinks.Add(v.NodeIndex, candidate.Input);
+                        depths?.Add(childDepth);
                         SearchNode w = new(candidate.State, nodeIndex);
                         openSet.Push(w, newCost, distance, heuristicWeight);
                     }
