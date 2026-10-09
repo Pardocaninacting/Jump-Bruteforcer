@@ -100,6 +100,12 @@ namespace Jump_Bruteforcer
         /// can no longer use the cactus technique (releasing one press of the jump key more than once).
         /// </summary>
         public bool DisableCactus { get { return disableCactus; } set { disableCactus = value; OnPropertyChanged(); } }
+        /// <summary>
+        /// Enables the A/D nudge (d-trick): while the kid stands on a block or platform, pressing
+        /// A or D shifts the horizontal speed by one pixel for that frame. Only some engines have
+        /// this mechanic, so it is off by default.
+        /// </summary>
+        public bool AllowNudge { get { return Player.AllowNudge; } set { Player.AllowNudge = value; OnPropertyChanged(); } }
         public String TimeTaken { get { return timeTaken; } set { timeTaken = value; OnPropertyChanged(); } }
         public String Macro { get { return macro; } set { macro = value; } }
         // Numeric timings exclude map loading and result rendering/export.
