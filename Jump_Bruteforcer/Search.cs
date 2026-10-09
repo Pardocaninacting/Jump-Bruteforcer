@@ -516,10 +516,13 @@ namespace Jump_Bruteforcer
                     groups[candidate.Structure] = candidate;
                 }
             }
+            // The sweep can come back shorter than the search the collection started from, so the
+            // cost of each entry is measured against the shortest one that was actually found.
+            int shortest = groups.Values.Min(c => c.Frames);
             foreach (SolutionCandidate candidate in groups.Values.OrderBy(c => c.Frames).ThenBy(c => c.Runs))
             {
                 Candidates.Add(new SolutionCandidate(Candidates.Count + 1, candidate.Frames, candidate.Runs,
-                    candidate.FrameDelta, candidate.Macro, candidate.Strat, candidate.Points,
+                    candidate.Frames - shortest, candidate.Macro, candidate.Strat, candidate.Points,
                     candidate.Fingerprint, candidate.Structure) { Variants = candidate.Variants });
             }
 
