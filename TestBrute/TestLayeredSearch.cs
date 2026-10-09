@@ -28,6 +28,9 @@ namespace TestBrute
         [InlineData(410, 407.4, 491, 407, "double")]
         [InlineData(410, 407.4, 551, 407, "65")]
         [InlineData(388, 407.4, 541, 407, "platform_invert")]
+        // solved by touching a warp, which is nowhere near the goal position
+        [InlineData(401, 407.4, 687, 211, "gate")]
+        [InlineData(401, 407.4, 587, 407, "needle_extremity_2_7")]
         public void TestLayeredMatchesAStar(int startX, double startY, int goalX, int goalY, string mapName)
         {
             Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\{mapName}.jmap"));
