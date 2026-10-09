@@ -1,4 +1,4 @@
-﻿using Priority_Queue;
+using Priority_Queue;
 using System.Collections;
 using System.Collections.Immutable;
 using System.ComponentModel;
@@ -61,6 +61,7 @@ namespace Jump_Bruteforcer
         private bool disableCactus = false;
         private int nudgePenalty = 1;
         private bool preferConcise = true;
+        private bool reroll = false;
         private CollisionMap _collisionMap = new(new Dictionary<(int, int), CollisionType>(), null);
         private PointCollection playerPath = new();
         private double startingVSpeed = 0;
@@ -121,6 +122,13 @@ namespace Jump_Bruteforcer
         /// notation is easier to read and to play back by hand.
         /// </summary>
         public bool PreferConcise { get { return preferConcise; } set { preferConcise = value; OnPropertyChanged(); } }
+        /// <summary>
+        /// Shuffle the order equally good successors are generated in, so running the same search
+        /// again returns a different one of the equally short solutions. The frame count does not
+        /// change: the shuffle only decides which of the parents that reach a state at the same
+        /// cost claims it first.
+        /// </summary>
+        public bool Reroll { get { return reroll; } set { reroll = value; OnPropertyChanged(); } }
         public String TimeTaken { get { return timeTaken; } set { timeTaken = value; OnPropertyChanged(); } }
         public String Macro { get { return macro; } set { macro = value; } }
         // Numeric timings exclude map loading and result rendering/export.
@@ -254,7 +262,19 @@ namespace Jump_Bruteforcer
         }
 
 
-        public SearchResult RunAStar() => UseLayeredBfs ? RunLayered() : RunNodeSearch();
+        public SearchResult RunAStar()
+        {
+            PlayerNode.RerollSeed = Reroll ? Random.Shared.Next(1, int.MaxValue) : 0;
+            try
+            {
+                return UseLayeredBfs ? RunLayered() : RunNodeSearch();
+            }
+            finally
+            {
+                // The shuffle belongs to one search, not to the process.
+                PlayerNode.RerollSeed = 0;
+            }
+        }
 
         /// <summary>
         /// Layered grouped BFS. Optimal, and it shares one vertical simulation between every state

@@ -41,6 +41,27 @@ namespace Jump_Bruteforcer
     public class PlayerNode : IEquatable<PlayerNode>
     {
         public static bool ShareHorizontal = true;
+        /// <summary>
+        /// Seed used to shuffle the order the successors of a state are generated in. Zero keeps the
+        /// order deterministic. The shuffle only changes which of the equally good parents claims a
+        /// state first, so the frame count of the solution is unchanged; it is what makes running
+        /// the same search again return a different one of the equally short solutions.
+        /// </summary>
+        public static int RerollSeed = 0;
+
+        /// <summary>Fisher-Yates over the first count candidates, with an xorshift so a seed repeats.</summary>
+        private static void Shuffle(NeighborCandidate[] neighbors, int count, int seed)
+        {
+            uint state = (uint)seed * 2654435761u + 1u;
+            for (int i = count - 1; i > 0; i--)
+            {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                int j = (int)(state % (uint)(i + 1));
+                (neighbors[i], neighbors[j]) = (neighbors[j], neighbors[i]);
+            }
+        }
         public static bool DisableFacingNormalization = false;
         const int epsilon = 10;
         // Four vertical groups times three horizontal choices times three nudge states (none/A/D).
@@ -101,6 +122,10 @@ namespace Jump_Bruteforcer
                 EmitGroups(CollisionMap, neighbors, Input.Jump | Input.Release, Input.Left | Input.Jump | Input.Release, Input.Right | Input.Jump | Input.Release, ref neighborCount);
             }
 
+            if (RerollSeed != 0)
+            {
+                Shuffle(neighbors, neighborCount, RerollSeed);
+            }
             return neighborCount;
 
             /// <summary>

@@ -16,6 +16,7 @@ Tick 'Disable cactus' before starting a search to forbid strats that release the
 Tick 'Allow A/D (d-trick)' to let the search nudge the kid one pixel sideways with A or D while it stands on a block or platform. Only some engines have that mechanic; the dropdown beside it decides how much the search has to gain from an A/D frame.
 Tick 'Optimal mode' to guarantee the shortest input sequence: the search first finds a solution as fast as it can, then sweeps the state space layer by layer inside that bound. It is roughly twice as slow as the default search, which is very fast but can be a couple of frames off on large screens.
 Tick 'Prefer concise notation' to have Optimal mode return the shortest sequence written in the fewest input changes. It costs no frames and drops gratuitous cactus releases and back and forth walking.
+Tick 'Another equal solution' to shuffle which of the equally good parents claims each state. Pressing 'Start Search' again then returns a different solution of the same length, which is how you collect several equally fast routes and pick the one that is easiest to play.
 
 The bruteforcer supports solids, playerkillers, water (1, 2, & 3), platforms, vines, and gravity flippers.
 Notable unsupported objects include anything dynamic (jump refreshers, apple animations, etc.).

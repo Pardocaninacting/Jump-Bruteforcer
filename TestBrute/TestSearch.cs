@@ -158,6 +158,29 @@ namespace TestBrute
             CountNudgeFrames(result.Macro).Should().BeGreaterThan(0);
         }
 
+        [Fact]
+        public void TestRerollGivesAnotherEqualSolution()
+        {
+            // The shuffle only decides which equally good parent claims a state, so the frame count
+            // must not move, and some of the runs must come out different.
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\tomo.jmap"));
+            Search plain = new((410, 407.4), (476, 343), map.CollisionMap);
+            SearchResult reference = plain.RunAStar();
+            reference.Success.Should().BeTrue();
+
+            var macros = new HashSet<string>();
+            int frames = FramesOf(reference);
+            for (int run = 0; run < 8; run++)
+            {
+                Search reroll = new((410, 407.4), (476, 343), map.CollisionMap) { Reroll = true };
+                SearchResult result = reroll.RunAStar();
+                result.Success.Should().BeTrue();
+                FramesOf(result).Should().Be(frames);
+                macros.Add(result.Macro);
+            }
+            macros.Count.Should().BeGreaterThan(1, "a reroll has to be able to return a different route");
+        }
+
         /// <summary>Frame count reported by a search result.</summary>
         private static int FramesOf(SearchResult result) =>
             int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);
