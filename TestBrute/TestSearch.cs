@@ -137,6 +137,29 @@ namespace TestBrute
         }
 
         [Fact]
+        public void TestDtScreenNeedsTheNudge()
+        {
+            string path = @$"..\..\..\jmaps\dt.jmap";
+            Map map = Parser.Parse(File.ReadAllText(path));
+
+            // Without the A/D nudge the screen cannot be solved at all.
+            Search withoutNudge = new((401, 407.4), (602, 407), map.CollisionMap);
+            withoutNudge.RunAStar().Success.Should().BeFalse();
+
+            // With it, the search finds a route.
+            Search withNudge = new((401, 407.4), (602, 407), map.CollisionMap) { AllowNudge = true };
+            SearchResult result = withNudge.RunAStar();
+            result.Success.Should().BeTrue();
+            Player.AllowNudge = false;
+
+            // and the route survives the export: one macro frame per input frame, with the nudge
+            // written as an A/D tap so that gm8emulator replays it
+            int frames = int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);
+            result.Macro.Count(c => c == '>').Should().Be(frames);
+            (result.Macro.Contains("A(PR)") || result.Macro.Contains("D(PR)")).Should().BeTrue();
+        }
+
+        [Fact]
         private void InstanceOverheadTest()
         {
             const int Size = 1000;

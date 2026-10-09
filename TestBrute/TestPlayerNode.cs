@@ -36,6 +36,41 @@ namespace TestBrute
         }
 
         [Fact]
+        public void TestNudgeNeedsGroundAndMovesOnePixel()
+        {
+            // A floor one pixel below the kid, so place_meeting(x, y + grav, oBlock) holds.
+            Dictionary<(int, int), CollisionType> solidFloor =
+                Enumerable.Range(0, 100 * 10).ToDictionary(x => (x % 100 + 400, x / 100 + 568), x => CollisionType.Solid);
+            CollisionMap solid = new(solidFloor, null);
+            PlayerNode grounded = new(450, 567.254, 0);
+
+            Player.AllowNudge = true;
+            grounded.NewState(Input.Neutral | Input.NudgeRight, solid).State.X.Should().Be(451);
+            grounded.NewState(Input.Neutral | Input.NudgeLeft, solid).State.X.Should().Be(449);
+            grounded.NewState(Input.Right | Input.NudgeRight, solid).State.X.Should().Be(454);
+            grounded.NewState(Input.Left | Input.NudgeRight, solid).State.X.Should().Be(448);   // -3 + 1
+            grounded.NewState(Input.Neutral, solid).State.X.Should().Be(450);
+
+            // Platforms inherit oBlock in the engine, so they count as ground too.
+            Dictionary<(int, int), CollisionType> platformFloor =
+                Enumerable.Range(0, 100 * 10).ToDictionary(x => (x % 100 + 400, x / 100 + 568), x => CollisionType.Platform);
+            CollisionMap platforms = new(platformFloor, null);
+            grounded.NewState(Input.Neutral | Input.NudgeRight, platforms).State.X.Should().Be(451);
+
+            // Water is not a block, and neither is thin air.
+            Dictionary<(int, int), CollisionType> waterFloor =
+                Enumerable.Range(0, 100 * 10).ToDictionary(x => (x % 100 + 400, x / 100 + 568), x => CollisionType.Water1);
+            CollisionMap water = new(waterFloor, null);
+            grounded.NewState(Input.Neutral | Input.NudgeRight, water).State.X.Should().Be(450);
+            new PlayerNode(450, 500, 0).NewState(Input.Neutral | Input.NudgeRight, solid).State.X.Should().Be(450);
+
+            // With the option off the nudge bits are inert.
+            Player.AllowNudge = false;
+            grounded.NewState(Input.Neutral | Input.NudgeRight, solid).State.X.Should().Be(450);
+            grounded.NewState(Input.Right | Input.NudgeRight, solid).State.X.Should().Be(453);
+        }
+
+        [Fact]
         public void TestCactusReleaseNeedsHeldJump()
         {
             CollisionMap cmap = new(new Dictionary<(int, int), CollisionType>(), null);
