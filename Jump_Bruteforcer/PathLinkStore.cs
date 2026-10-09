@@ -12,7 +12,7 @@ namespace Jump_Bruteforcer
         private const int ChunkShift = 18;
         private const int ChunkSize = 1 << ChunkShift;
         private const int ChunkMask = ChunkSize - 1;
-        private const int InputShift = 28;
+        private const int InputShift = 26;   // six input bits: Neutral/Left/Right/Jump/Release/A/D
         private const int MaxPackedNodeCount = 1 << InputShift;
         private const uint ParentMask = MaxPackedNodeCount - 1;
 
@@ -67,7 +67,7 @@ namespace Jump_Bruteforcer
             }
 
             uint inputValue = (byte)input;
-            if (inputValue > 0xf)
+            if (inputValue > 0x3f)
             {
                 throw new ArgumentOutOfRangeException(nameof(input));
             }

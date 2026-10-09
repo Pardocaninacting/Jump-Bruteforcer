@@ -9,7 +9,11 @@ namespace Jump_Bruteforcer
         Left = 1,
         Right = 2,
         Jump = 4,
-        Release = 8
+        Release = 8,
+        // d-trick: A and D shift the horizontal speed by one pixel while standing on a
+        // block or platform. Only some engines have this, so it is gated by AllowNudge.
+        NudgeLeft = 16,
+        NudgeRight = 32
     }
 
     internal readonly record struct PlayerUpdateContext(
@@ -20,6 +24,11 @@ namespace Jump_Bruteforcer
 
     public static class Player
     {
+        /// <summary>
+        /// Enables the A/D nudge (d-trick). Off by default: only some engines have the
+        /// mechanic, and enabling it grows the branching factor while the kid is grounded.
+        /// </summary>
+        public static bool AllowNudge = false;
         private const CollisionType SingleJumpCollisions =
             CollisionType.Solid | CollisionType.Water1 | CollisionType.Platform;
         private const CollisionType AnyJumpCollisions =
@@ -201,6 +210,19 @@ namespace Jump_Bruteforcer
             if ((input & Input.Release) == Input.Release & (vSpeed < 0 & !globalGravInverted | vSpeed > 0 & globalGravInverted))
             {
                 vSpeed *= PhysicsParams.RELEASE_MULTIPLIER;
+            }
+            //  d-trick: pressing A or D while the kid stands on a block or platform shifts the
+            //  horizontal speed by one pixel for this frame. oPlatform and the slide blocks
+            //  inherit from oBlock in the engine, so Platform counts as ground here.
+            if (AllowNudge)
+            {
+                int nudgeOffset = globalGravInverted ? -1 : 1;
+                CollisionType groundCollision = collisionMap.GetCollisionTypes(x, y + nudgeOffset, kidUpsidedown);
+                if ((groundCollision & (CollisionType.Solid | CollisionType.Platform)) != CollisionType.None)
+                {
+                    if ((input & Input.NudgeLeft) == Input.NudgeLeft) hSpeed -= 1;
+                    if ((input & Input.NudgeRight) == Input.NudgeRight) hSpeed += 1;
+                }
             }
             //more vines
             int vineOffset = globalGravInverted ? -1 : 1;
