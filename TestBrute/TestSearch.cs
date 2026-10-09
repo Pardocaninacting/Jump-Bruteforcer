@@ -154,9 +154,71 @@ namespace TestBrute
 
             // and the route survives the export: one macro frame per input frame, with the nudge
             // written as an A/D tap so that gm8emulator replays it
-            int frames = int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);
-            result.Macro.Count(c => c == '>').Should().Be(frames);
-            (result.Macro.Contains("A(PR)") || result.Macro.Contains("D(PR)")).Should().BeTrue();
+            result.Macro.Count(c => c == '>').Should().Be(FramesOf(result));
+            CountNudgeFrames(result.Macro).Should().BeGreaterThan(0);
+        }
+
+        /// <summary>Frame count reported by a search result.</summary>
+        private static int FramesOf(SearchResult result) =>
+            int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);
+
+        /// <summary>Frames of the macro that press A or D.</summary>
+        private static int CountNudgeFrames(string macro) =>
+            macro.Split('>', StringSplitOptions.RemoveEmptyEntries)
+                 .Count(frame => frame.Contains("A(PR)") || frame.Contains("D(PR)"));
+
+        [Fact]
+        public void TestNudgePenaltyIsInertWithoutTheNudge()
+        {
+            // With A/D off no frame carries the bits, so the penalty cannot change anything.
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\co.jmap"));
+
+            Search free = new((410, 407.4), (485, 407), map.CollisionMap) { NudgePenalty = 0 };
+            SearchResult freeResult = free.RunAStar();
+
+            Search penalised = new((410, 407.4), (485, 407), map.CollisionMap) { NudgePenalty = 2 };
+            SearchResult penalisedResult = penalised.RunAStar();
+
+            penalisedResult.Success.Should().BeTrue();
+            penalisedResult.InputString.Should().Be(freeResult.InputString);
+            penalised.NodesVisited.Should().Be(free.NodesVisited);
+        }
+
+        [Fact]
+        public void TestNudgePenaltyDropsGratuitousNudges()
+        {
+            // platform_elevator solves in the same number of frames with and without A/D, so every
+            // nudge in the unpenalised solution is free. The default penalty removes them.
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\platform_elevator.jmap"));
+
+            Search free = new((399, 487.4), (399, 295), map.CollisionMap) { AllowNudge = true, NudgePenalty = 0 };
+            SearchResult freeResult = free.RunAStar();
+            freeResult.Success.Should().BeTrue();
+            CountNudgeFrames(freeResult.Macro).Should().BeGreaterThan(0);
+
+            Search balanced = new((399, 487.4), (399, 295), map.CollisionMap) { AllowNudge = true };
+            SearchResult balancedResult = balanced.RunAStar();
+            Player.AllowNudge = false;
+
+            balancedResult.Success.Should().BeTrue();
+            CountNudgeFrames(balancedResult.Macro).Should().Be(0);
+            FramesOf(balancedResult).Should().Be(FramesOf(freeResult));
+        }
+
+        [Fact]
+        public void TestNudgePenaltyKeepsTheNudgesThatAreNeeded()
+        {
+            // dt cannot be solved without A/D, so even the harshest setting keeps exactly the one
+            // frame that makes the jump possible, at the cost of two frames out of 67.
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\dt.jmap"));
+
+            Search needed = new((401, 407.4), (602, 407), map.CollisionMap) { AllowNudge = true, NudgePenalty = 2 };
+            SearchResult result = needed.RunAStar();
+            Player.AllowNudge = false;
+
+            result.Success.Should().BeTrue();
+            CountNudgeFrames(result.Macro).Should().Be(1);
+            FramesOf(result).Should().BeLessThanOrEqualTo(67);
         }
 
         [Fact]
