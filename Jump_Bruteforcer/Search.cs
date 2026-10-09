@@ -326,10 +326,18 @@ namespace Jump_Bruteforcer
                 return;
             }
 
+            // The panels keep describing the first search; the extra time it takes to look for more
+            // solutions is added to it, so the reported time is the time the user actually waited.
             int frames = lastInputs.Count;
+            string firstVisited = NodesVisited;
+            TimeSpan firstElapsed = SearchElapsed;
+            int threshold = Math.Max(1, frames / 10);
             var seen = new HashSet<string>();
-            Remember(frames, seen);
-            for (int attempt = 1; attempt < CandidateCount; attempt++)
+            Remember(frames, threshold, seen);
+
+            var extra = Stopwatch.StartNew();
+            int misses = 0;
+            for (int attempt = 1; attempt < CandidateCount * 3 && Candidates.Count < CandidateCount && misses < 5; attempt++)
             {
                 PlayerNode.RerollSeed = Random.Shared.Next(1, int.MaxValue);
                 try
@@ -340,28 +348,54 @@ namespace Jump_Bruteforcer
                 {
                     PlayerNode.RerollSeed = 0;
                 }
-                if (lastInputs.Count != frames)
-                {
-                    continue;
-                }
-                Remember(frames, seen);
+                // Only equally short routes count, and only when they stay apart from the ones kept.
+                misses = lastInputs.Count != frames || !Remember(frames, threshold, seen) ? misses + 1 : 0;
             }
+            extra.Stop();
 
-            if (Candidates.Count > 0)
-            {
-                SelectedCandidateIndex = 0;
-            }
+            Show(Candidates[0]);
+            SelectedCandidateIndex = 0;
+            NodesVisited = firstVisited;
+            SearchElapsed = firstElapsed + extra.Elapsed;
+            TimeTaken = SearchElapsed.ToString(@"dd\:hh\:mm\:ss\.ff");
         }
 
-        /// <summary>Records the solution the last search left behind unless its route is already there.</summary>
-        private void Remember(int frames, HashSet<string> seen)
+        /// <summary>
+        /// Records the solution the last search left behind, unless its route is already there or it
+        /// stays too close to one that is. Returns whether it was kept.
+        /// </summary>
+        private bool Remember(int frames, int threshold, HashSet<string> seen)
         {
             string fingerprint = Fingerprint(lastInputs);
             if (!seen.Add(fingerprint))
             {
-                return;
+                return false;
+            }
+            foreach (SolutionCandidate kept in Candidates)
+            {
+                if (RouteDistance(kept.Fingerprint, fingerprint) < threshold)
+                {
+                    return false;
+                }
             }
             Candidates.Add(new SolutionCandidate(Candidates.Count + 1, frames, InputChanges(lastInputs), Macro, Strat, PlayerPath, fingerprint));
+            return true;
+        }
+
+        /// <summary>Frames of the two routes that do not visit the same positions.</summary>
+        private static int RouteDistance(string left, string right)
+        {
+            string[] a = left.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            string[] b = right.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            int diff = 0;
+            for (int i = 0; i < Math.Min(a.Length, b.Length); i++)
+            {
+                if (a[i] != b[i])
+                {
+                    diff++;
+                }
+            }
+            return diff;
         }
 
         /// <summary>The positions the last solution visits, used to tell two routes apart.</summary>

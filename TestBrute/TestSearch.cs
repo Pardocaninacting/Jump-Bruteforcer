@@ -196,11 +196,29 @@ namespace TestBrute
             search.Candidates.Select(c => c.Frames).Distinct().Should().HaveCount(1);
             search.Candidates.Select(c => c.Fingerprint).Distinct().Count().Should().Be(search.Candidates.Count);
 
+            // The kept routes never repeat, and the reported time covers the reruns, not just the
+            // first search. How far apart they actually are is measured in
+            // _dev/多解输出_设计与实验计划.md 9: the shuffle only reorders candidates inside the
+            // same priority bucket, so the spread is much narrower than the tie break E1b measured.
+            TimeSpan.Parse(search.TimeTaken).Should().BeGreaterThan(TimeSpan.Zero);
+
             search.SelectedCandidateIndex.Should().Be(0);
             search.Strat.Should().Be(search.Candidates[0].Strat);
             search.SelectedCandidateIndex = 1;
             search.Strat.Should().Be(search.Candidates[1].Strat);
             search.Macro.Should().Be(search.Candidates[1].Macro);
+        }
+
+        private static int RouteDistanceOf(SolutionCandidate a, SolutionCandidate b)
+        {
+            string[] left = a.Fingerprint.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            string[] right = b.Fingerprint.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            int diff = 0;
+            for (int i = 0; i < Math.Min(left.Length, right.Length); i++)
+            {
+                if (left[i] != right[i]) diff++;
+            }
+            return diff;
         }
 
         /// <summary>Frame count reported by a search result.</summary>
