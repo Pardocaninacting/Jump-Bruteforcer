@@ -400,7 +400,9 @@ namespace Jump_Bruteforcer
             exclusions = new HashSet<(int Depth, Input Mask)>();
             try
             {
-                for (int round = 0; round < CandidateCount && gathered.Count < CandidateCount * 2; round++)
+                // Only when more than one solution was asked for: the collection must not cost the
+                // ordinary single solution search anything at all.
+                for (int round = 0; CandidateCount > 1 && round < CandidateCount && gathered.Count < CandidateCount * 2; round++)
                 {
                     int jump = LastJumpFrame(lastInputs);
                     if (jump < 0)
@@ -491,6 +493,11 @@ namespace Jump_Bruteforcer
         /// </summary>
         private void AddTimingVariants(List<SolutionCandidate> gathered, int frames, HashSet<string> seen)
         {
+            if (CandidateCount <= 1)
+            {
+                // One solution was asked for, so nothing extra may run.
+                return;
+            }
             const int MaxExtraFrames = 8;
             int cap = CandidateCount * 3;
             var best = new List<Input>(lastInputs);

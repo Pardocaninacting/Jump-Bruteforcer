@@ -262,6 +262,55 @@ namespace TestBrute
             return (end < 0 ? text[start..] : text[start..end]).Trim().Replace("\n", " ");
         }
 
+        [Fact]
+        public void TestSingleSolutionCostsNothingExtra()
+        {
+            // Without the collection option the search must behave exactly like before it existed:
+            // one candidate, and the reported time is the search itself.
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\tomo.jmap"));
+            Search search = new((410, 407.4), (476, 343), map.CollisionMap);
+            SearchResult result = search.RunAStar();
+
+            result.Success.Should().BeTrue();
+            search.Candidates.Count.Should().Be(1);
+            search.Candidates[0].Frames.Should().Be(FramesOf(result));
+            search.Candidates[0].FrameDelta.Should().Be(0);
+            search.Candidates[0].Runs.Should().Be(Search.InputChanges(search.Candidates[0].Structure.Length > 0
+                ? MacrosToInputs(result.Macro)
+                : new List<Input>()));
+        }
+
+        /// <summary>The macro written back as inputs, which is how the emitted solution is checked.</summary>
+        private static List<Input> MacrosToInputs(string macro)
+        {
+            var inputs = new List<Input>();
+            string[] segments = macro.Split('>');
+            int count = segments.Length;
+            if (count > 0 && segments[count - 1].Length == 0) count--;
+            Input previous = Input.Neutral;
+            for (int i = 0; i < count; i++)
+            {
+                if (segments[i].Length == 0)
+                {
+                    inputs.Add(previous);
+                    continue;
+                }
+                Input input = Input.Neutral;
+                foreach (string token in segments[i].Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (token.StartsWith("LeftArrow") && !token.Contains("(R)")) input |= Input.Left;
+                    else if (token.StartsWith("RightArrow") && !token.Contains("(R)")) input |= Input.Right;
+                    else if (token.StartsWith("J(")) input |= Input.Jump;
+                    else if (token.StartsWith("K(")) input |= Input.Release;
+                    else if (token.StartsWith("A(")) input |= Input.NudgeLeft;
+                    else if (token.StartsWith("D(")) input |= Input.NudgeRight;
+                }
+                previous = input;
+                inputs.Add(input);
+            }
+            return inputs;
+        }
+
         /// <summary>Frame count reported by a search result.</summary>
         private static int FramesOf(SearchResult result) =>
             int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);
