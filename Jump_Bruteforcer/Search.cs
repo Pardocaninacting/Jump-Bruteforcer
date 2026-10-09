@@ -60,6 +60,7 @@ namespace Jump_Bruteforcer
         private string _strat = "";
         private bool disableCactus = false;
         private int nudgePenalty = 1;
+        private bool preferConcise = true;
         private CollisionMap _collisionMap = new(new Dictionary<(int, int), CollisionType>(), null);
         private PointCollection playerPath = new();
         private double startingVSpeed = 0;
@@ -114,6 +115,12 @@ namespace Jump_Bruteforcer
         /// frame, which no player can press. Has no effect while AllowNudge is off.
         /// </summary>
         public int NudgePenalty { get { return nudgePenalty; } set { nudgePenalty = Math.Max(0, value); OnPropertyChanged(); } }
+        /// <summary>
+        /// When set, Optimal mode returns the shortest solution written in the fewest input changes
+        /// rather than whichever shortest solution it finds first. It never costs frames, and the
+        /// notation is easier to read and to play back by hand.
+        /// </summary>
+        public bool PreferConcise { get { return preferConcise; } set { preferConcise = value; OnPropertyChanged(); } }
         public String TimeTaken { get { return timeTaken; } set { timeTaken = value; OnPropertyChanged(); } }
         public String Macro { get { return macro; } set { macro = value; } }
         // Numeric timings exclude map loading and result rendering/export.
@@ -275,7 +282,7 @@ namespace Jump_Bruteforcer
             FloodFill();
             FloodFillElapsed = Stopwatch.GetElapsedTime(startTime);
             var layeredStart = Stopwatch.GetTimestamp();
-            var layered = new LayeredSearch(CollisionMap, start, goal, startingVSpeed, DisableCactus, UseVerticalBound);
+            var layered = new LayeredSearch(CollisionMap, start, goal, startingVSpeed, DisableCactus, UseVerticalBound, PreferConcise);
             List<Input>? inputs;
             if (LayeredUsesAStarBound)
             {
@@ -286,7 +293,7 @@ namespace Jump_Bruteforcer
                 // The sweep carries a per state minimum of the input changes, but its
                 // deduplication only keeps the first arrival, so it can come out more verbose than
                 // the A* it was bounded by. Same frame count, so take whichever reads shorter.
-                if (inputs != null && referenceInputs.Count == inputs.Count
+                if (inputs != null && PreferConcise && referenceInputs.Count == inputs.Count
                     && InputChanges(referenceInputs) < InputChanges(inputs))
                 {
                     inputs = referenceInputs;

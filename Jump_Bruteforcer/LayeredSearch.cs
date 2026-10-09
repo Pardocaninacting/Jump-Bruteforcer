@@ -50,7 +50,8 @@ namespace Jump_Bruteforcer
 
         private readonly VisitedStateSet _visited = new();
         private readonly PathLinkStore _links = new();
-        private readonly NeighborCandidate[] _scratch = new NeighborCandidate[PlayerNode.MaxNeighborCount];
+        /// <summary>Keep the fewest-changes goal of each layer instead of the first one found.</summary>
+        private readonly bool _preferConcise;        private readonly NeighborCandidate[] _scratch = new NeighborCandidate[PlayerNode.MaxNeighborCount];
 
         // Bucket heads and counting sort scratch, allocated lazily per (flags, vspeed) plane.
         private int[][] _countPlanes = Array.Empty<int[]>();
@@ -77,7 +78,7 @@ namespace Jump_Bruteforcer
         public int[] ClosedStates { get; } = new int[Map.WIDTH * Map.HEIGHT];
         public uint FrameCount { get; private set; }
 
-        public LayeredSearch(CollisionMap map, (int x, double y) start, (int x, int y) goal, double startVSpeed, bool disableCactus, bool useVerticalBound = true)
+        public LayeredSearch(CollisionMap map, (int x, double y) start, (int x, int y) goal, double startVSpeed, bool disableCactus, bool useVerticalBound = true, bool preferConcise = true)
         {
             _map = map;
             _goal = goal;
@@ -86,6 +87,7 @@ namespace Jump_Bruteforcer
             _startVSpeed = startVSpeed;
             _ignoreFacing = !map.HasVines;
             _disableCactus = disableCactus;
+            _preferConcise = preferConcise;
             BuildFlagTable();
             BuildRowMasks();
             _lowerBound = AdmissibleDistance.Build(map, goal);
@@ -360,6 +362,8 @@ namespace Jump_Bruteforcer
                             cur.Processed[member] = true;
                         }
                     }
+
+                    if (next.GoalIndex >= 0 && !_preferConcise) return next.GoalIndex;
                 }
             }
             ClearOrder();
@@ -471,7 +475,8 @@ namespace Jump_Bruteforcer
                             target = full;
                         }
                         emitted++;
-                        Add(next, target, input, cur.Idx[member], layer, frameBound, RunsTo(cur, member, input));
+                        bool goal = Add(next, target, input, cur.Idx[member], layer, frameBound, RunsTo(cur, member, input));
+                        if (goal && !_preferConcise) return emitted;
                     }
                 }
             }
@@ -486,6 +491,7 @@ namespace Jump_Bruteforcer
             for (int i = 0; i < n; i++)
             {
                 Add(next, _scratch[i].State, _scratch[i].Input, cur.Idx[index], layer, frameBound, RunsTo(cur, index, _scratch[i].Input));
+                if (next.GoalIndex >= 0 && !_preferConcise) return;
             }
         }
 
@@ -504,7 +510,13 @@ namespace Jump_Bruteforcer
             next.Add(state.X, state.Y, state.VSpeed, (byte)state.Flags, nodeIndex, BucketOf(state), runs);
             if (IsGoal(state))
             {
-                // The whole layer is still expanded, so keep the fewest changes of all goals in it.
+                // With PreferConcise the whole layer is still expanded, so this keeps the fewest
+                // changes of all goals in it; otherwise the first one found wins.
+                if (!_preferConcise)
+                {
+                    next.GoalIndex = nodeIndex;
+                    return true;
+                }
                 if (runs < next.GoalRuns)
                 {
                     // The goal index has to be the path link, not the position inside the layer.

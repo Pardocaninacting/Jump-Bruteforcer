@@ -53,6 +53,30 @@ namespace TestBrute
                              $"lgb v={layered.NodesVisited} {layered.TimeTaken} U={layered.LayeredUpperBound} beam={layered.LayeredBeamSucceeded}");
         }
 
+        [Theory]
+        [InlineData(410, 407.4, 476, 343, "tomo")]
+        [InlineData(452, 407.4, 482, 343, "minif")]
+        [InlineData(420, 407.4, 477, 375, "ground_dplane")]
+        public void TestPreferConciseCostsNoFrames(int startX, double startY, int goalX, int goalY, string mapName)
+        {
+            Map map = Parser.Parse(File.ReadAllText(@$"..\..\..\jmaps\{mapName}.jmap"));
+
+            Search firstFound = new((startX, startY), (goalX, goalY), map.CollisionMap) { UseLayeredBfs = true, PreferConcise = false };
+            SearchResult before = firstFound.RunAStar();
+
+            Search concise = new((startX, startY), (goalX, goalY), map.CollisionMap) { UseLayeredBfs = true };
+            SearchResult after = concise.RunAStar();
+
+            after.Success.Should().Be(before.Success);
+            // same length, and no longer to write down
+            FramesOf(after).Should().Be(FramesOf(before));
+            after.Macro.Length.Should().BeLessThanOrEqualTo(before.Macro.Length);
+        }
+
+        /// <summary>Frame count reported by a search result.</summary>
+        private static int FramesOf(SearchResult result) =>
+            int.Parse(System.Text.RegularExpressions.Regex.Match(result.InputString, @"Frames: (\d+)").Groups[1].Value);
+
         [Fact]
         public void TestLayeredDisableCactus()
         {

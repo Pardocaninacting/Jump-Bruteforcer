@@ -72,7 +72,10 @@
             <ComboBoxItem Content="Needed only"/>
         </ComboBox>
 
-        <ScrollViewer Canvas.Left="872"  Canvas.Top="126" Height="522"  Width="256" Content="{Binding Strat}" HorizontalScrollBarVisibility="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" VerticalScrollBarVisibility="Auto"/>
+        <CheckBox Content="Prefer concise notation" Canvas.Left="870" Canvas.Top="122" IsChecked="{Binding PreferConcise}"
+                  ToolTip="In Optimal mode, return the shortest sequence written in the fewest input changes instead of whichever shortest sequence is found first. Costs no frames, and drops gratuitous cactus releases and back and forth walking."/>
+
+        <ScrollViewer Canvas.Left="872"  Canvas.Top="144" Height="504"  Width="256" Content="{Binding Strat}" HorizontalScrollBarVisibility="Auto" HorizontalAlignment="Left" VerticalAlignment="Center" VerticalScrollBarVisibility="Auto"/>
         <Button x:Name="CopyMacroButton" Content="Copy Macro" Canvas.Left="1060" Canvas.Top="10" Click="CopyMacroButton_Click"/>
         <Button Content="Bruteforce Project" Height="19" Canvas.Left="870" Canvas.Top="61" Width="100" Click="BruteforceProjectButton_Click"/>
     </Canvas>
